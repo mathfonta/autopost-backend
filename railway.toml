@@ -1,0 +1,20 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+# ─── Serviço: API ────────────────────────────────────────────
+[[services]]
+name = "api"
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+
+# ─── Serviço: Worker Celery ──────────────────────────────────
+[[services]]
+name = "worker"
+startCommand = "celery -A app.tasks worker --loglevel=info --concurrency=2"
+
+# ─── Serviço: Beat (Scheduler) ───────────────────────────────
+[[services]]
+name = "beat"
+startCommand = "celery -A app.tasks beat --loglevel=info"
