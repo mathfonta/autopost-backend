@@ -17,4 +17,4 @@ startCommand = "celery -A app.tasks worker --loglevel=info --concurrency=2"
 # ─── Serviço: Beat (Scheduler) ───────────────────────────────
 [[services]]
 name = "beat"
-startCommand = "celery -A app.tasks beat --loglevel=info -S redbeat.RedBeatScheduler"
+startCommand = "celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid"
