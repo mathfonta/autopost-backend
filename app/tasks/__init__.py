@@ -27,4 +27,7 @@ celery_app.conf.update(
     # Worker
     worker_prefetch_multiplier=1,
     task_acks_late=True,
+    # Beat — usa Redis para armazenar agenda (sem arquivo em disco)
+    beat_scheduler="redbeat.RedBeatScheduler",
+    redbeat_redis_url=settings.REDIS_URL,
 )
