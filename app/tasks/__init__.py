@@ -12,7 +12,7 @@ celery_app = Celery(
     "autopost",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=[],  # adicionar módulos de tasks aqui conforme criados
+    include=["app.tasks.pipeline"],
 )
 
 celery_app.conf.update(
