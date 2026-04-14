@@ -210,28 +210,26 @@ def generate_copy(self, request_id: str) -> str:
 @celery_app.task(bind=True, name="pipeline.prepare_design", max_retries=2)
 def prepare_design(self, request_id: str) -> str:
     """
-    Decide o tratamento visual do post.
-    Foto de obra → publica limpa. Outros → cria card clean.
-    Stub — lógica visual implementada no Epic 2 (app/agents/designer.py).
+    Processa a imagem com Pillow (resize, logo, card ou antes/depois)
+    e faz upload do resultado para Cloudflare R2.
 
     Returns:
         request_id
     """
+    from app.agents.designer import process_image
+
     logger.info(f"[prepare_design] request_id={request_id}")
 
     try:
-        req = _run_sync(_get_request(request_id))
-        analysis = req.analysis_result or {}
-        publish_clean = analysis.get("publish_clean", True)
-
-        # ── STUB: substituído pelo Designer no Epic 2 ──
-        design = {
-            "type": "clean_photo" if publish_clean else "card",
-            "add_logo": True,
-            "overlay_text": False,
-            "note": "Design real pendente (Epic 2)",
-        }
-        # ───────────────────────────────────────────────
+        req = _run_sync(_get_request_with_client(request_id))
+        design = _run_sync(
+            process_image(
+                request_id,
+                req["photo_url"],
+                req["analysis_result"],
+                req["brand_profile"],
+            )
+        )
 
         _run_sync(_update_status(
             request_id,

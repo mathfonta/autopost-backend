@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.limiter import limiter
 from app.api.health import router as health_router
 from app.api.auth import router as auth_router
+from app.api.onboarding import router as onboarding_router
 
 settings = get_settings()
 
@@ -53,3 +54,4 @@ app.add_middleware(
 # ─── Routers ─────────────────────────────────────────────────
 app.include_router(health_router, tags=["infra"])
 app.include_router(auth_router)
+app.include_router(onboarding_router)

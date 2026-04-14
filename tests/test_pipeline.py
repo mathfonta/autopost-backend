@@ -199,21 +199,33 @@ def test_generate_copy_sets_copy_result():
 # ─── prepare_design ─────────────────────────────────────────────
 
 
+def _fake_ai_design():
+    return {
+        "processed_photo_url": "https://r2.example.com/processed/test/final.jpg",
+        "type": "clean_photo",
+        "dimensions": "1080x1080",
+        "file_size_kb": 280,
+        "r2_key": "processed/test/final.jpg",
+    }
+
+
 def test_prepare_design_transitions_to_awaiting_approval():
     rid = _rid()
     call_log = []
-    fake_req = _fake_request()
-    fake_req.analysis_result = {"publish_clean": True}
 
     async def fake_update(request_id, status, **kwargs):
         call_log.append(status)
 
-    async def fake_get(request_id):
-        return fake_req
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(request_id, photo_url, analysis_result, brand_profile):
+        return _fake_ai_design()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
-        patch("app.tasks.pipeline._get_request", side_effect=fake_get),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.designer.process_image", side_effect=fake_ai),
     ):
         result = prepare_design.run(rid)
 
@@ -225,19 +237,21 @@ def test_prepare_design_clean_photo_type():
     """publish_clean=True → design.type == clean_photo."""
     rid = _rid()
     results = []
-    fake_req = _fake_request()
-    fake_req.analysis_result = {"publish_clean": True}
 
     async def fake_update(request_id, status, **kwargs):
         if "result_data" in kwargs:
             results.append(kwargs["result_data"])
 
-    async def fake_get(request_id):
-        return fake_req
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(request_id, photo_url, analysis_result, brand_profile):
+        return _fake_ai_design()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
-        patch("app.tasks.pipeline._get_request", side_effect=fake_get),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.designer.process_image", side_effect=fake_ai),
     ):
         prepare_design.run(rid)
 
@@ -246,22 +260,24 @@ def test_prepare_design_clean_photo_type():
 
 
 def test_prepare_design_card_type():
-    """publish_clean=False → design.type == card."""
+    """publish_clean=False → design.type == card (via mock)."""
     rid = _rid()
     results = []
-    fake_req = _fake_request()
-    fake_req.analysis_result = {"publish_clean": False}
 
     async def fake_update(request_id, status, **kwargs):
         if "result_data" in kwargs:
             results.append(kwargs["result_data"])
 
-    async def fake_get(request_id):
-        return fake_req
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(request_id, photo_url, analysis_result, brand_profile):
+        return {**_fake_ai_design(), "type": "card"}
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
-        patch("app.tasks.pipeline._get_request", side_effect=fake_get),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.designer.process_image", side_effect=fake_ai),
     ):
         prepare_design.run(rid)
 

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     CLOUDFLARE_R2_ACCESS_KEY: str
     CLOUDFLARE_R2_SECRET_KEY: str
     CLOUDFLARE_R2_ENDPOINT: str
+    CLOUDFLARE_R2_PUBLIC_URL: str = ""  # URL pública das imagens processadas
 
     # ─── IA ──────────────────────────────────────────────────
     ANTHROPIC_API_KEY: str
