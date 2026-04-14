@@ -173,23 +173,21 @@ def analyze_photo(self, request_id: str) -> str:
 @celery_app.task(bind=True, name="pipeline.generate_copy", max_retries=2)
 def generate_copy(self, request_id: str) -> str:
     """
-    Gera legenda, hashtags e CTA para o post.
-    Stub — IA implementada no Epic 2 (app/agents/copywriter.py).
+    Gera legenda, hashtags e CTA via Claude Sonnet.
+    Usa analysis_result + brand_profile do cliente.
 
     Returns:
         request_id
     """
+    from app.agents.copywriter import generate_copy_with_ai
+
     logger.info(f"[generate_copy] request_id={request_id}")
 
     try:
-        # ── STUB: substituído pelo Claude Sonnet no Epic 2 ──
-        copy = {
-            "caption": "Post gerado automaticamente — legenda real pendente (Epic 2).",
-            "hashtags": ["#construção", "#reforma", "#autopost"],
-            "cta": "Entre em contato para um orçamento!",
-            "suggested_time": "19:00",
-        }
-        # ────────────────────────────────────────────────────
+        req = _run_sync(_get_request_with_client(request_id))
+        copy = _run_sync(
+            generate_copy_with_ai(req["analysis_result"], req["brand_profile"])
+        )
 
         _run_sync(_update_status(
             request_id,

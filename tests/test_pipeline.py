@@ -135,6 +135,15 @@ def test_analyze_photo_marks_failed_on_error():
 # ─── generate_copy ──────────────────────────────────────────────
 
 
+def _fake_ai_copy():
+    return {
+        "caption": "Mais um projeto entregue! ✨ Piso em porcelanato 90x90.",
+        "hashtags": ["construcaocivil", "florianopolis", "porcelanato"],
+        "cta": "Entre em contato pelo link na bio!",
+        "suggested_time": "18:00",
+    }
+
+
 def test_generate_copy_transitions_to_design():
     rid = _rid()
     call_log = []
@@ -142,7 +151,17 @@ def test_generate_copy_transitions_to_design():
     async def fake_update(request_id, status, **kwargs):
         call_log.append(status)
 
-    with patch("app.tasks.pipeline._update_status", side_effect=fake_update):
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(analysis_result, brand_profile):
+        return _fake_ai_copy()
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.copywriter.generate_copy_with_ai", side_effect=fake_ai),
+    ):
         result = generate_copy.run(rid)
 
     assert result == rid
@@ -157,7 +176,17 @@ def test_generate_copy_sets_copy_result():
         if "result_data" in kwargs:
             results.append(kwargs["result_data"])
 
-    with patch("app.tasks.pipeline._update_status", side_effect=fake_update):
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(analysis_result, brand_profile):
+        return _fake_ai_copy()
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.copywriter.generate_copy_with_ai", side_effect=fake_ai),
+    ):
         generate_copy.run(rid)
 
     assert results
