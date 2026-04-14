@@ -29,6 +29,18 @@ class Client(Base):
     brand_profile: Mapped[dict] = mapped_column(
         JSONB, default=dict, nullable=False, server_default="{}"
     )
+
+    # ─── Meta / Instagram ────────────────────────────────────────
+    meta_access_token: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="Long-Lived Token Meta Graph API"
+    )
+    instagram_business_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Instagram Business Account ID"
+    )
+    facebook_page_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Facebook Page ID"
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )

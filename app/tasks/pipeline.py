@@ -13,6 +13,7 @@ Fluxo:
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from celery import chain
 from sqlalchemy import select
@@ -31,7 +32,7 @@ def _run_sync(coro):
 
 
 async def _get_request_with_client(request_id: str) -> dict:
-    """Busca ContentRequest + brand_profile do Client associado."""
+    """Busca ContentRequest + dados relevantes do Client associado."""
     from app.core.database import AsyncSessionLocal
     from app.models.client import Client
 
@@ -57,6 +58,11 @@ async def _get_request_with_client(request_id: str) -> dict:
             "brand_profile": brand_profile or {},
             "analysis_result": req.analysis_result or {},
             "copy_result": req.copy_result or {},
+            "design_result": req.design_result or {},
+            # Credenciais Meta (podem ser None)
+            "meta_access_token": (client.meta_access_token or "") if client else "",
+            "instagram_business_id": (client.instagram_business_id or "") if client else "",
+            "facebook_page_id": (client.facebook_page_id or "") if client else "",
         }
 
 
@@ -252,39 +258,131 @@ def prepare_design(self, request_id: str) -> str:
 @celery_app.task(bind=True, name="pipeline.publish_post", max_retries=3)
 def publish_post(self, request_id: str) -> str:
     """
-    Publica o post aprovado no Instagram/Facebook via Meta Graph API.
-    Stub — integração Meta implementada no Epic 2 (app/agents/publisher.py).
-
+    Publica o post aprovado no Instagram Business e Facebook via Meta Graph API.
     Deve ser chamado APENAS após aprovação manual do cliente.
+
     Returns:
         request_id
     """
+    from app.agents.publisher import (
+        publish_to_instagram,
+        publish_to_facebook,
+        build_full_caption,
+        MetaAPIError,
+    )
+
     logger.info(f"[publish_post] request_id={request_id}")
 
     try:
         _run_sync(_update_status(request_id, ContentStatus.publishing))
 
-        # ── STUB: substituído pelo Publicador no Epic 2 ──
+        req = _run_sync(_get_request_with_client(request_id))
+
+        # URL da imagem processada (fallback para original se Designer não rodou)
+        image_url = req["design_result"].get("processed_photo_url") or req["photo_url"]
+        full_caption = build_full_caption(req["copy_result"])
+
+        access_token = req["meta_access_token"]
+        ig_id = req["instagram_business_id"]
+        fb_id = req["facebook_page_id"]
+
+        instagram_post_id = None
+        facebook_post_id = None
+        permalink = None
+
+        # ── Instagram ──
+        if ig_id and access_token:
+            try:
+                ig = _run_sync(publish_to_instagram(ig_id, access_token, image_url, full_caption))
+                instagram_post_id = ig["post_id"]
+                permalink = ig["permalink"]
+            except MetaAPIError as exc:
+                if exc.is_token_expired:
+                    error_msg = "Token Meta expirado. Acesse Configurações → Redes Sociais para renovar."
+                    _run_sync(_update_status(request_id, ContentStatus.failed, error=error_msg))
+                    logger.warning(f"[publish_post] token expirado request_id={request_id}")
+                    return request_id
+                raise
+
+        # ── Facebook (opcional — falha não cancela Instagram) ──
+        if fb_id and access_token:
+            try:
+                fb = _run_sync(publish_to_facebook(fb_id, access_token, image_url, full_caption))
+                facebook_post_id = fb["post_id"]
+            except MetaAPIError as exc:
+                logger.warning(f"[publish_post] falha no Facebook (ignorada): {exc}")
+
         publish_result = {
-            "instagram_post_id": None,
-            "facebook_post_id": None,
-            "permalink": None,
-            "note": "Publicação real pendente (Epic 2)",
+            "instagram_post_id": instagram_post_id,
+            "facebook_post_id": facebook_post_id,
+            "permalink": permalink,
+            "published_at": datetime.now(timezone.utc).isoformat(),
         }
-        # ─────────────────────────────────────────────────
 
         _run_sync(_update_status(
             request_id,
             ContentStatus.published,
+            result_field="publish_result",
+            result_data=publish_result,
         ))
 
-        logger.info(f"[publish_post] concluído request_id={request_id}")
+        # Agenda coleta de métricas 24h depois
+        if instagram_post_id:
+            collect_metrics.apply_async(args=[request_id], countdown=86400)
+
+        logger.info(f"[publish_post] concluído request_id={request_id} ig={instagram_post_id}")
         return request_id
 
     except Exception as exc:
         logger.error(f"[publish_post] erro: {exc}")
         _run_sync(_update_status(request_id, ContentStatus.failed, error=str(exc)))
         raise self.retry(exc=exc, countdown=60)
+
+
+# ─── Task 5: Coletor de Métricas ─────────────────────────────────
+
+@celery_app.task(bind=True, name="pipeline.collect_metrics", max_retries=2)
+def collect_metrics(self, request_id: str) -> str:
+    """
+    Coleta métricas do post (impressões, alcance, curtidas, comentários)
+    24h após a publicação.
+
+    Agendado automaticamente por publish_post via apply_async(countdown=86400).
+
+    Returns:
+        request_id
+    """
+    from app.agents.publisher import collect_post_metrics
+
+    logger.info(f"[collect_metrics] request_id={request_id}")
+
+    try:
+        req = _run_sync(_get_request_with_client(request_id))
+        publish_result = req.get("publish_result") or {}
+        instagram_post_id = publish_result.get("instagram_post_id")
+        access_token = req["meta_access_token"]
+
+        if not instagram_post_id or not access_token:
+            logger.info(f"[collect_metrics] sem dados para coletar request_id={request_id}")
+            return request_id
+
+        metrics = _run_sync(collect_post_metrics(instagram_post_id, access_token))
+
+        # Atualiza publish_result adicionando métricas
+        updated_result = {**publish_result, "metrics": metrics}
+        _run_sync(_update_status(
+            request_id,
+            ContentStatus.published,  # mantém published
+            result_field="publish_result",
+            result_data=updated_result,
+        ))
+
+        logger.info(f"[collect_metrics] concluído request_id={request_id}")
+        return request_id
+
+    except Exception as exc:
+        logger.error(f"[collect_metrics] erro: {exc}")
+        raise self.retry(exc=exc, countdown=3600)  # retry em 1h
 
 
 # ─── Pipeline Chain ──────────────────────────────────────────────

@@ -288,6 +288,21 @@ def test_prepare_design_card_type():
 # ─── publish_post ───────────────────────────────────────────────
 
 
+def _fake_request_with_meta():
+    return {
+        **_fake_request_with_client(),
+        "design_result": {"processed_photo_url": "https://r2.example.com/processed/test/final.jpg"},
+        "copy_result": {"caption": "Texto.", "cta": "CTA.", "hashtags": ["construcao"]},
+        "meta_access_token": "fake-token",
+        "instagram_business_id": "ig-123",
+        "facebook_page_id": "",
+    }
+
+
+def _fake_ig_result():
+    return {"post_id": "ig-post-abc", "permalink": "https://www.instagram.com/p/abc/"}
+
+
 def test_publish_post_transitions_to_published():
     rid = _rid()
     call_log = []
@@ -295,7 +310,18 @@ def test_publish_post_transitions_to_published():
     async def fake_update(request_id, status, **kwargs):
         call_log.append(status)
 
-    with patch("app.tasks.pipeline._update_status", side_effect=fake_update):
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_meta()
+
+    async def fake_ig(ig_id, token, image_url, caption):
+        return _fake_ig_result()
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.publisher.publish_to_instagram", side_effect=fake_ig),
+        patch("app.tasks.pipeline.collect_metrics"),  # evita agendamento real
+    ):
         result = publish_post.run(rid)
 
     assert result == rid

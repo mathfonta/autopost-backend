@@ -71,6 +71,9 @@ class ContentRequest(Base, TenantMixin):
     design_result: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, comment="Output do Agente Designer"
     )
+    publish_result: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, comment="Output do Agente Publicador (IDs, permalink, métricas)"
+    )
 
     # ─── Timestamps ──────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
