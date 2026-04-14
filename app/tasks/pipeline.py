@@ -30,6 +30,36 @@ def _run_sync(coro):
     return asyncio.run(coro)
 
 
+async def _get_request_with_client(request_id: str) -> dict:
+    """Busca ContentRequest + brand_profile do Client associado."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.client import Client
+
+    uid = uuid.UUID(request_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(ContentRequest).where(ContentRequest.id == uid)
+        )
+        req = result.scalar_one_or_none()
+        if not req:
+            raise ValueError(f"ContentRequest {request_id} não encontrado")
+
+        client_result = await db.execute(
+            select(Client).where(Client.id == req.client_id)
+        )
+        client = client_result.scalar_one_or_none()
+        brand_profile = client.brand_profile if client else {}
+
+        return {
+            "id": str(req.id),
+            "photo_url": req.photo_url,
+            "photo_key": req.photo_key,
+            "brand_profile": brand_profile or {},
+            "analysis_result": req.analysis_result or {},
+            "copy_result": req.copy_result or {},
+        }
+
+
 async def _get_request(request_id: str) -> ContentRequest:
     """Busca ContentRequest pelo ID, levanta se não encontrar."""
     from app.core.database import AsyncSessionLocal
@@ -82,12 +112,14 @@ async def _update_status(
 @celery_app.task(bind=True, name="pipeline.analyze_photo", max_retries=2)
 def analyze_photo(self, request_id: str) -> str:
     """
-    Analisa a foto recebida (qualidade, tipo de conteúdo, estágio da obra).
-    Stub — IA implementada no Epic 2 (app/agents/analyst.py).
+    Analisa a foto recebida via Claude Haiku com visão.
+    Atualiza analysis_result com: quality, content_type, description, publish_clean.
 
     Returns:
         request_id — passado para a próxima task na chain.
     """
+    from app.agents.analyst import analyze_photo_with_ai
+
     logger.info(f"[analyze_photo] request_id={request_id}")
 
     try:
@@ -97,15 +129,29 @@ def analyze_photo(self, request_id: str) -> str:
             celery_task_id=self.request.id,
         ))
 
-        # ── STUB: substituído pelo Claude Haiku no Epic 2 ──
-        analysis = {
-            "quality": "good",
-            "content_type": "obra_realizada",
-            "description": "Foto de obra recebida — análise real pendente (Epic 2)",
-            "publish_clean": True,
-        }
-        # ────────────────────────────────────────────────────
+        # Busca foto e brand_profile do cliente
+        req = _run_sync(_get_request_with_client(request_id))
+        analysis = _run_sync(
+            analyze_photo_with_ai(req["photo_url"], req["brand_profile"])
+        )
 
+        # Foto ruim → falha com mensagem amigável
+        if analysis.get("quality") == "bad":
+            error_msg = analysis.get(
+                "error_message",
+                "A foto não está adequada para publicação. Tente tirar uma nova foto."
+            )
+            _run_sync(_update_status(
+                request_id,
+                ContentStatus.failed,
+                result_field="analysis_result",
+                result_data=analysis,
+                error=error_msg,
+            ))
+            logger.info(f"[analyze_photo] foto reprovada request_id={request_id}")
+            return request_id
+
+        # Foto ok → avança para copy
         _run_sync(_update_status(
             request_id,
             ContentStatus.copy,

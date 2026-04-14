@@ -37,6 +37,28 @@ def _rid():
 # ─── analyze_photo ──────────────────────────────────────────────
 
 
+def _fake_request_with_client():
+    return {
+        "id": str(uuid.uuid4()),
+        "photo_url": "https://r2.example.com/photo.jpg",
+        "photo_key": "uploads/photo.jpg",
+        "brand_profile": {"segment": "construção", "city": "Florianópolis"},
+        "analysis_result": {},
+        "copy_result": {},
+    }
+
+
+def _fake_ai_analysis():
+    return {
+        "quality": "good",
+        "quality_reason": "ok",
+        "content_type": "obra_realizada",
+        "description": "Foto de obra.",
+        "publish_clean": True,
+        "stage": "acabamento",
+    }
+
+
 def test_analyze_photo_transitions_to_copy():
     """analyze_photo deve setar status=copy e preencher analysis_result."""
     rid = _rid()
@@ -45,12 +67,16 @@ def test_analyze_photo_transitions_to_copy():
     async def fake_update(request_id, status, **kwargs):
         call_log.append((request_id, status, kwargs))
 
-    async def fake_get(request_id):
-        return _fake_request()
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(photo_url, brand_profile):
+        return _fake_ai_analysis()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
-        patch("app.tasks.pipeline._get_request", side_effect=fake_get),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.analyst.analyze_photo_with_ai", side_effect=fake_ai),
     ):
         result = analyze_photo.run(rid)
 
@@ -69,7 +95,17 @@ def test_analyze_photo_sets_analysis_result():
         if "result_data" in kwargs:
             results.append(kwargs["result_data"])
 
-    with patch("app.tasks.pipeline._update_status", side_effect=fake_update):
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client()
+
+    async def fake_ai(photo_url, brand_profile):
+        return _fake_ai_analysis()
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.agents.analyst.analyze_photo_with_ai", side_effect=fake_ai),
+    ):
         analyze_photo.run(rid)
 
     assert results, "analysis_result não foi gravado"
