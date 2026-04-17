@@ -34,11 +34,11 @@ def _run_sync(coro):
 
 async def _get_request_with_client(request_id: str) -> dict:
     """Busca ContentRequest + dados relevantes do Client associado."""
-    from app.core.database import AsyncSessionLocal
+    from app.core.database import WorkerSessionLocal
     from app.models.client import Client
 
     uid = uuid.UUID(request_id)
-    async with AsyncSessionLocal() as db:
+    async with WorkerSessionLocal() as db:
         result = await db.execute(
             select(ContentRequest).where(ContentRequest.id == uid)
         )
@@ -70,10 +70,10 @@ async def _get_request_with_client(request_id: str) -> dict:
 
 async def _get_request(request_id: str) -> ContentRequest:
     """Busca ContentRequest pelo ID, levanta se não encontrar."""
-    from app.core.database import AsyncSessionLocal
+    from app.core.database import WorkerSessionLocal
 
     uid = uuid.UUID(request_id)
-    async with AsyncSessionLocal() as db:
+    async with WorkerSessionLocal() as db:
         result = await db.execute(
             select(ContentRequest).where(ContentRequest.id == uid)
         )
@@ -93,10 +93,10 @@ async def _update_status(
     celery_task_id: str | None = None,
 ) -> None:
     """Atualiza status (e opcionalmente um campo de resultado) da ContentRequest."""
-    from app.core.database import AsyncSessionLocal
+    from app.core.database import WorkerSessionLocal
 
     uid = uuid.UUID(request_id)
-    async with AsyncSessionLocal() as db:
+    async with WorkerSessionLocal() as db:
         result = await db.execute(
             select(ContentRequest).where(ContentRequest.id == uid)
         )
