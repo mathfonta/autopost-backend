@@ -412,12 +412,37 @@ def update_cerebro_patterns(self) -> str:
         raise self.retry(exc=exc, countdown=3600)  # retry em 1h
 
 
+# ─── Task 7: Promoção Global (Celery Beat mensal) ────────────────
+
+@celery_app.task(bind=True, name="pipeline.promote_to_global_cerebro", max_retries=1)
+def promote_to_global_cerebro(self) -> str:
+    """
+    Promove padrões do cérebro local para o global.
+    Agendado pelo Celery Beat na primeira segunda de cada mês às 09:00.
+    """
+    from app.cerebro.promoter import promote_to_global
+
+    logger.info("[promote_to_global_cerebro] iniciando promoção mensal")
+
+    try:
+        _run_sync(promote_to_global(project_name="autopost", segment="construção civil"))
+        logger.info("[promote_to_global_cerebro] concluído")
+        return "ok"
+    except Exception as exc:
+        logger.error(f"[promote_to_global_cerebro] erro: {exc}")
+        raise self.retry(exc=exc, countdown=3600)  # retry em 1h
+
+
 # ─── Beat Schedule ───────────────────────────────────────────────
 
 celery_app.conf.beat_schedule = {
     "update-cerebro-patterns": {
         "task": "pipeline.update_cerebro_patterns",
-        "schedule": crontab(hour=8, minute=0, day_of_week=1),  # segunda 08:00
+        "schedule": crontab(hour=8, minute=0, day_of_week=1),  # toda segunda 08:00
+    },
+    "promote-to-global-cerebro": {
+        "task": "pipeline.promote_to_global_cerebro",
+        "schedule": crontab(hour=9, minute=0, day_of_week=1, day_of_month="1-7"),  # 1ª segunda do mês 09:00
     },
 }
 

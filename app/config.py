@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Fallback automático no reader.py: .cerebro-autopost/ na raiz do projeto
     CEREBRO_PATH: str = ""
 
+    # Cérebro Global — cross-projeto
+    # Ex: C:\Users\Matheus\OneDrive\Obsidian\🌐 Global
+    GLOBAL_CEREBRO_PATH: str = ""
+
     # ─── Add-ons opcionais ───────────────────────────────────
     GOOGLE_DRIVE_CLIENT_ID: str = ""
     GOOGLE_DRIVE_CLIENT_SECRET: str = ""
