@@ -14,7 +14,8 @@ OAUTH_DIALOG = "https://www.facebook.com/v21.0/dialog/oauth"
 OAUTH_SCOPES = (
     "instagram_content_publish,"
     "pages_manage_posts,pages_read_engagement,"
-    "pages_show_list"
+    "pages_show_list,"
+    "business_management"
 )
 
 
