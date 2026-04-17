@@ -62,7 +62,7 @@ async def exchange_code_for_short_token(
     Troca o authorization code por um Short-Lived Token (~1 hora).
     POST https://graph.facebook.com/v21.0/oauth/access_token
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{GRAPH_BASE}/oauth/access_token",
             data={
@@ -90,7 +90,7 @@ async def exchange_for_long_lived_token(
     GET https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token
     Retorna (long_lived_token, expires_at).
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{GRAPH_BASE}/oauth/access_token",
             params={

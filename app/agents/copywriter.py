@@ -149,7 +149,7 @@ FOTO:
     result.setdefault("caption", "")
     result.setdefault("hashtags", [])
     result.setdefault("cta", "Entre em contato pelo link na bio!")
-    result.setdefault("suggested_time", _DEFAULT_TIMES.get(segment.lower(), _DEFAULT_TIMES["default"]))
+    result.setdefault("suggested_time", _DEFAULT_TIMES.get(segment.lower().strip(), _DEFAULT_TIMES["default"]))
 
     # Trunca caption se ultrapassar limite do Instagram
     if len(result["caption"]) > MAX_CAPTION_CHARS:

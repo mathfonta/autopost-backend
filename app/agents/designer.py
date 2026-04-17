@@ -11,7 +11,7 @@ import io
 import logging
 
 import httpx
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from app.core.storage import upload_to_r2
 
@@ -96,6 +96,11 @@ def _process_clean_photo(img: Image.Image, logo: Image.Image | None) -> Image.Im
     return _add_logo(img, logo)
 
 
+def _load_font(size: int) -> ImageFont.ImageFont:
+    """Carrega fonte com tamanho explícito (Pillow >= 10.1.0)."""
+    return ImageFont.load_default(size=size)
+
+
 def _process_card(description: str, brand_profile: dict, logo: Image.Image | None) -> Image.Image:
     """Card 1080×1080 com cor primária do cliente, texto e logo."""
     primary = brand_profile.get("primary_color", DEFAULT_PRIMARY_COLOR)
@@ -107,9 +112,12 @@ def _process_card(description: str, brand_profile: dict, logo: Image.Image | Non
     img = Image.new("RGBA", TARGET_SIZE, (*bg, 255))
     draw = ImageDraw.Draw(img)
 
+    font_title = _load_font(52)
+    font_body = _load_font(36)
+
     company = brand_profile.get("company_name", "")
     if company:
-        draw.text((54, 80), company.upper(), fill=(255, 255, 255, 230))
+        draw.text((54, 80), company.upper(), fill=(255, 255, 255, 230), font=font_title)
 
     # Quebra o texto em linhas de ~38 caracteres
     words, lines, line = description.split(), [], ""
@@ -122,10 +130,10 @@ def _process_card(description: str, brand_profile: dict, logo: Image.Image | Non
     if line:
         lines.append(line)
 
-    y = 200
+    y = 220
     for ln in lines[:12]:
-        draw.text((54, y), ln, fill=(255, 255, 255, 200))
-        y += 60
+        draw.text((54, y), ln, fill=(255, 255, 255, 200), font=font_body)
+        y += 50
 
     return _add_logo(img, logo)
 
