@@ -56,8 +56,16 @@ async def register(
     db.add(client)
     await db.commit()
 
-    # 4. Retorna tokens
+    # 4. Retorna tokens — se session for None (email confirmation ativo), faz login
     session = auth_response.session
+    if not session:
+        try:
+            login_response = await supabase_sign_in(body.email, body.password)
+            session = login_response.session
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Conta criada mas erro ao autenticar: {str(e)}")
+    if not session:
+        raise HTTPException(status_code=400, detail="Conta criada. Confirme o email para fazer login.")
     return TokenResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
