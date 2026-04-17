@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 
 from celery import chain
+from celery.schedules import crontab
 from sqlalchemy import select
 
 from app.tasks import celery_app
@@ -59,6 +60,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "analysis_result": req.analysis_result or {},
             "copy_result": req.copy_result or {},
             "design_result": req.design_result or {},
+            "publish_result": req.publish_result or {},
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
             "instagram_business_id": (client.instagram_business_id or "") if client else "",
@@ -377,12 +379,47 @@ def collect_metrics(self, request_id: str) -> str:
             result_data=updated_result,
         ))
 
+        # Escreve resultado no cérebro local (falha silenciosa — não quebra o pipeline)
+        from app.cerebro.writer import write_post_to_history
+        write_post_to_history(req, metrics)
+
         logger.info(f"[collect_metrics] concluído request_id={request_id}")
         return request_id
 
     except Exception as exc:
         logger.error(f"[collect_metrics] erro: {exc}")
         raise self.retry(exc=exc, countdown=3600)  # retry em 1h
+
+
+# ─── Task 6: Atualização do Cérebro (Celery Beat) ────────────────
+
+@celery_app.task(bind=True, name="pipeline.update_cerebro_patterns", max_retries=1)
+def update_cerebro_patterns(self) -> str:
+    """
+    Analisa histórico acumulado e atualiza PADROES.md e INSIGHTS.md.
+    Agendado pelo Celery Beat toda segunda-feira às 08:00 (America/Sao_Paulo).
+    """
+    from app.cerebro.analyzer import analyze_and_update_patterns
+
+    logger.info("[update_cerebro_patterns] iniciando análise semanal do cérebro")
+
+    try:
+        _run_sync(analyze_and_update_patterns())
+        logger.info("[update_cerebro_patterns] concluído")
+        return "ok"
+    except Exception as exc:
+        logger.error(f"[update_cerebro_patterns] erro: {exc}")
+        raise self.retry(exc=exc, countdown=3600)  # retry em 1h
+
+
+# ─── Beat Schedule ───────────────────────────────────────────────
+
+celery_app.conf.beat_schedule = {
+    "update-cerebro-patterns": {
+        "task": "pipeline.update_cerebro_patterns",
+        "schedule": crontab(hour=8, minute=0, day_of_week=1),  # segunda 08:00
+    },
+}
 
 
 # ─── Pipeline Chain ──────────────────────────────────────────────

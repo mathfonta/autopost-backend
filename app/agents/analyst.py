@@ -13,6 +13,7 @@ import logging
 
 import anthropic
 
+from app.cerebro.reader import read_patterns
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -81,9 +82,21 @@ async def analyze_photo_with_ai(
     if city:
         context += f" em {city}"
 
-    user_message = f"{context}. Analise esta foto para publicação no Instagram."
+    # Injeta padrões do cérebro local se disponíveis
+    patterns = read_patterns()
+    patterns_context = ""
+    if patterns:
+        patterns_context = (
+            f"\n\nPadrões de desempenho descobertos para este cliente:\n{patterns}\n"
+            "Use esses padrões para contextualizar sua análise quando relevante."
+        )
 
-    logger.info(f"[analyst] chamando Claude Haiku — url={photo_url[:60]}...")
+    user_message = f"{context}. Analise esta foto para publicação no Instagram.{patterns_context}"
+
+    logger.info(
+        f"[analyst] chamando Claude Haiku — url={photo_url[:60]}... "
+        f"patterns={'sim' if patterns else 'não'}"
+    )
 
     message = await client.messages.create(
         model=MODEL,

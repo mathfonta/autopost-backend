@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_VERIFY_TOKEN: str = ""
 
+    # ─── Meta OAuth ──────────────────────────────────────────
+    META_APP_ID: str = ""
+    META_APP_SECRET: str = ""
+    META_REDIRECT_URI: str = ""  # ex: https://espectra-api-production.up.railway.app/meta/callback
+
+    # ─── Segundo Cérebro ─────────────────────────────────────
+    # Em produção/local: aponta para o vault Obsidian
+    # Ex: C:\Users\Matheus\OneDrive\Obsidian\AutoPost\🧠 Cerebro
+    # Fallback automático no reader.py: .cerebro-autopost/ na raiz do projeto
+    CEREBRO_PATH: str = ""
+
     # ─── Add-ons opcionais ───────────────────────────────────
     GOOGLE_DRIVE_CLIENT_ID: str = ""
     GOOGLE_DRIVE_CLIENT_SECRET: str = ""

@@ -14,6 +14,7 @@ import logging
 
 import anthropic
 
+from app.cerebro.reader import read_patterns
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,15 @@ async def generate_copy_with_ai(
     }
     content_label = content_type_labels.get(content_type, content_type)
 
+    # Injeta padrões do cérebro local (horário e CTA comprovados)
+    patterns = read_patterns()
+    patterns_section = ""
+    if patterns:
+        patterns_section = (
+            f"\n\nPADRÕES COMPROVADOS PARA ESTE CLIENTE:\n{patterns}\n\n"
+            "Use o horário e CTA sugeridos pelos padrões como referência prioritária."
+        )
+
     user_message = f"""
 Crie uma legenda para este post:
 
@@ -114,10 +124,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}
+- Etapa/detalhe: {stage or "não informado"}{patterns_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,
