@@ -145,19 +145,38 @@ async def get_instagram_business_info(
         page_name = page.get("name", "")
         page_token = page.get("access_token", long_token)
 
+        # Tenta campo instagram_business_account via page token
         async with httpx.AsyncClient() as client:
             ig_resp = await client.get(
                 f"{GRAPH_BASE}/{page_id}",
                 params={
-                    "fields": "instagram_business_account",
+                    "fields": "instagram_business_account,connected_instagram_account",
                     "access_token": page_token,
                 },
             )
-        ig_debug.append({"page": page_name, "id": page_id, "ig_resp": ig_resp.json()})
-        if ig_resp.status_code != 200:
-            continue
 
-        ig_account = ig_resp.json().get("instagram_business_account")
+        # Tenta também via user token direto
+        async with httpx.AsyncClient() as client:
+            ig_user_resp = await client.get(
+                f"{GRAPH_BASE}/{page_id}",
+                params={
+                    "fields": "instagram_business_account,connected_instagram_account",
+                    "access_token": long_token,
+                },
+            )
+
+        ig_debug.append({
+            "page": page_name,
+            "id": page_id,
+            "via_page_token": ig_resp.json(),
+            "via_user_token": ig_user_resp.json(),
+        })
+
+        ig_data = ig_resp.json()
+        ig_account = ig_data.get("instagram_business_account") or ig_data.get("connected_instagram_account")
+        if not ig_account:
+            ig_data2 = ig_user_resp.json()
+            ig_account = ig_data2.get("instagram_business_account") or ig_data2.get("connected_instagram_account")
         if not ig_account:
             continue
 
