@@ -134,10 +134,11 @@ async def get_instagram_business_info(
     if not pages:
         raise HTTPException(
             status_code=400,
-            detail="Nenhuma Página do Facebook encontrada na sua conta.",
+            detail=f"Nenhuma Página do Facebook encontrada. Resposta Meta: {resp.json()}",
         )
 
     # 2. Para cada página, verificar se há IG Business Account
+    ig_debug = []
     for page in pages:
         page_id = page["id"]
         page_name = page.get("name", "")
@@ -151,6 +152,7 @@ async def get_instagram_business_info(
                     "access_token": page_token,
                 },
             )
+        ig_debug.append({"page": page_name, "id": page_id, "ig_resp": ig_resp.json()})
         if ig_resp.status_code != 200:
             continue
 
@@ -177,9 +179,5 @@ async def get_instagram_business_info(
 
     raise HTTPException(
         status_code=400,
-        detail=(
-            "Nenhuma conta Instagram Business encontrada nas suas Páginas. "
-            "Certifique-se de que sua conta Instagram está configurada como Business "
-            "e vinculada a uma Página do Facebook."
-        ),
+        detail=f"Nenhuma conta Instagram Business encontrada. Debug: {ig_debug}",
     )
