@@ -12,6 +12,7 @@ from jose import JWTError, jwt
 GRAPH_BASE = "https://graph.facebook.com/v21.0"
 OAUTH_DIALOG = "https://www.facebook.com/v21.0/dialog/oauth"
 OAUTH_SCOPES = (
+    "instagram_basic,"
     "instagram_content_publish,"
     "pages_manage_posts,pages_read_engagement,"
     "pages_show_list,"
