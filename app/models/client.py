@@ -34,11 +34,20 @@ class Client(Base):
     meta_access_token: Mapped[str | None] = mapped_column(
         String(500), nullable=True, comment="Long-Lived Token Meta Graph API"
     )
+    meta_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Expiração do Long-Lived Token Meta"
+    )
     instagram_business_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Instagram Business Account ID"
     )
+    instagram_username: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Username público do Instagram"
+    )
     facebook_page_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Facebook Page ID"
+    )
+    facebook_page_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Nome da Página do Facebook"
     )
 
     is_active: Mapped[bool] = mapped_column(
