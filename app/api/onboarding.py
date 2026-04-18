@@ -36,7 +36,41 @@ class OnboardingStatus(BaseModel):
     brand_profile: dict | None = None
 
 
+class SetupRequest(BaseModel):
+    company_name: str
+    segment: str
+    tone: str
+    colors: str = ""
+
+
 # ─── Endpoints ───────────────────────────────────────────────────────────────
+
+@router.post("/setup", status_code=204)
+async def setup_onboarding(
+    body: SetupRequest,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Salva brand_profile diretamente a partir do formulário do wizard — sem agente Claude."""
+    brand_profile = {
+        "company_name": body.company_name.strip(),
+        "segment": body.segment,
+        "tone": body.tone,
+        "colors": body.colors.strip(),
+    }
+    db_result = await db.execute(
+        select(Client).where(Client.id == current_client.id)
+    )
+    client = db_result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    client.brand_profile = brand_profile
+    client.company_name = body.company_name.strip()
+    await db.commit()
+    logger.info(f"[onboarding] setup direto salvo client_id={current_client.id}")
+    return None
+
 
 @router.post("/start", response_model=OnboardingReply, status_code=200)
 async def start_onboarding(
