@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_client
 from app.core.database import get_db
-from app.core.storage import upload_to_r2
+from app.core.storage import upload_to_r2, generate_presigned_url
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
 from app.tasks.pipeline import start_content_pipeline, publish_post
@@ -36,6 +36,24 @@ router = APIRouter(prefix="/content-requests", tags=["content"])
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+PRESIGNED_URL_TTL = 3600  # 1 hora
+
+
+def _freshen_urls(req: ContentRequest) -> ContentRequest:
+    """Substitui URLs do R2 por presigned URLs válidas por 1h."""
+    try:
+        req.photo_url = generate_presigned_url(req.photo_key, PRESIGNED_URL_TTL)
+    except Exception:
+        pass
+
+    if req.design_result and req.design_result.get("r2_key"):
+        try:
+            fresh = generate_presigned_url(req.design_result["r2_key"], PRESIGNED_URL_TTL)
+            req.design_result = {**req.design_result, "processed_photo_url": fresh}
+        except Exception:
+            pass
+
+    return req
 
 
 # ─── POST /content-requests ─────────────────────────────────────
@@ -119,7 +137,7 @@ async def get_content_request(
     if req.client_id != current_client.id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
-    return req
+    return _freshen_urls(req)
 
 
 # ─── GET /content-requests ──────────────────────────────────────
@@ -151,7 +169,7 @@ async def list_content_requests(
     items = list(items_result.scalars().all())
 
     return ContentRequestListResponse(
-        items=items,
+        items=[_freshen_urls(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
