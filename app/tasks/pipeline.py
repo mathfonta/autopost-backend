@@ -247,6 +247,19 @@ def prepare_design(self, request_id: str) -> str:
             result_data=design,
         ))
 
+        # Dispara push para o cliente (falha silenciosa — não quebra o pipeline)
+        try:
+            from app.api.push import send_push_notification
+            req_data = _run_sync(_get_request(request_id))
+            _run_sync(send_push_notification(
+                client_id=str(req_data.client_id),
+                title="AutoPost",
+                body="Novo post aguardando sua aprovação!",
+                url=f"/posts/{request_id}",
+            ))
+        except Exception as push_exc:
+            logger.warning(f"[prepare_design] push falhou (ignorado): {push_exc}")
+
         logger.info(f"[prepare_design] concluído request_id={request_id}")
         return request_id
 

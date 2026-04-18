@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Ex: C:\Users\Matheus\OneDrive\Obsidian\🌐 Global
     GLOBAL_CEREBRO_PATH: str = ""
 
+    # ─── Web Push (VAPID) ────────────────────────────────────
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_EMAIL: str = "mailto:admin@autopost.com.br"
+
     # ─── Add-ons opcionais ───────────────────────────────────
     GOOGLE_DRIVE_CLIENT_ID: str = ""
     GOOGLE_DRIVE_CLIENT_SECRET: str = ""
