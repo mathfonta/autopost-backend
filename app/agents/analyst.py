@@ -8,10 +8,12 @@ Responsabilidades:
 - Retornar descrição textual da imagem para o Copywriter usar
 """
 
+import base64
 import json
 import logging
 
 import anthropic
+import httpx
 
 from app.cerebro.reader import read_patterns
 from app.config import get_settings
@@ -98,6 +100,13 @@ async def analyze_photo_with_ai(
         f"patterns={'sim' if patterns else 'não'}"
     )
 
+    # Baixa a imagem e envia como base64 (R2 é privado)
+    async with httpx.AsyncClient(timeout=30.0) as http:
+        img_resp = await http.get(photo_url)
+    img_resp.raise_for_status()
+    img_b64 = base64.standard_b64encode(img_resp.content).decode("utf-8")
+    media_type = img_resp.headers.get("content-type", "image/jpeg").split(";")[0]
+
     message = await client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -110,8 +119,9 @@ async def analyze_photo_with_ai(
                     {
                         "type": "image",
                         "source": {
-                            "type": "url",
-                            "url": photo_url,
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": img_b64,
                         },
                     },
                     {
