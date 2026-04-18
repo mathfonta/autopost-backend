@@ -85,6 +85,21 @@ async def publish_to_instagram(
         creation_id = data["id"]
         logger.info(f"[publisher] container criado creation_id={creation_id}")
 
+        # Aguarda container ficar FINISHED (Instagram processa a imagem)
+        import asyncio as _asyncio
+        for _ in range(12):
+            await _asyncio.sleep(5)
+            status_resp = await client.get(
+                f"{GRAPH_BASE}/{creation_id}",
+                params={"fields": "status_code", "access_token": access_token},
+            )
+            status_code = status_resp.json().get("status_code", "")
+            logger.info(f"[publisher] container status={status_code}")
+            if status_code == "FINISHED":
+                break
+            if status_code == "ERROR":
+                raise RuntimeError(f"Container falhou no processamento: {status_resp.json()}")
+
         # Etapa 2 — publica
         resp = await client.post(
             f"{GRAPH_BASE}/{instagram_business_id}/media_publish",
