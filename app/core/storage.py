@@ -44,6 +44,22 @@ def _sync_upload(key: str, data: bytes, content_type: str) -> str:
     return f"{public_base}/{key}"
 
 
+def _sync_download(key: str) -> bytes:
+    """Download síncrono do R2. Chamado via executor."""
+    settings = get_settings()
+    client = _get_r2_client()
+    response = client.get_object(Bucket=settings.CLOUDFLARE_R2_BUCKET, Key=key)
+    return response["Body"].read()
+
+
+async def download_from_r2(key: str) -> bytes:
+    """Baixa bytes de um objeto no Cloudflare R2."""
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(None, partial(_sync_download, key))
+    logger.info(f"[storage] download key={key} size={len(data) // 1024}KB")
+    return data
+
+
 async def upload_to_r2(key: str, data: bytes, content_type: str = "image/jpeg") -> str:
     """Upload bytes para Cloudflare R2. Retorna a URL pública do objeto."""
     loop = asyncio.get_event_loop()

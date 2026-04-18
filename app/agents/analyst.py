@@ -59,13 +59,15 @@ Regras:
 async def analyze_photo_with_ai(
     photo_url: str,
     brand_profile: dict,
+    photo_key: str = "",
 ) -> dict:
     """
     Analisa uma foto usando Claude Haiku com visão.
 
     Args:
-        photo_url: URL pública da imagem no Cloudflare R2
+        photo_url: URL da imagem no Cloudflare R2
         brand_profile: Perfil de marca do cliente (segment, tone, etc.)
+        photo_key: Chave do objeto no R2 (preferencial — evita acesso HTTP ao bucket privado)
 
     Returns:
         dict com: quality, quality_reason, content_type, description,
@@ -100,12 +102,17 @@ async def analyze_photo_with_ai(
         f"patterns={'sim' if patterns else 'não'}"
     )
 
-    # Baixa a imagem e envia como base64 (R2 é privado)
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        img_resp = await http.get(photo_url)
-    img_resp.raise_for_status()
-    img_b64 = base64.standard_b64encode(img_resp.content).decode("utf-8")
-    media_type = img_resp.headers.get("content-type", "image/jpeg").split(";")[0]
+    # Baixa a imagem via R2 (boto3) se tiver photo_key, senão tenta HTTP
+    if photo_key:
+        from app.core.storage import download_from_r2
+        img_bytes = await download_from_r2(photo_key)
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            img_resp = await http.get(photo_url)
+        img_resp.raise_for_status()
+        img_bytes = img_resp.content
+    img_b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
+    media_type = "image/jpeg"
 
     message = await client.messages.create(
         model=MODEL,

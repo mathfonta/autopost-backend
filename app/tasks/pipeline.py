@@ -140,7 +140,7 @@ def analyze_photo(self, request_id: str) -> str:
         # Busca foto e brand_profile do cliente
         req = _run_sync(_get_request_with_client(request_id))
         analysis = _run_sync(
-            analyze_photo_with_ai(req["photo_url"], req["brand_profile"])
+            analyze_photo_with_ai(req["photo_url"], req["brand_profile"], req.get("photo_key", ""))
         )
 
         # Foto ruim → falha com mensagem amigável
