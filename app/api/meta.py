@@ -10,6 +10,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,11 +109,11 @@ async def meta_callback(
     await db.commit()
 
     logger.info(f"[meta] cliente {client.id} conectou IG @{ig_username} / página '{page_name}'")
-    return {
-        "connected": True,
-        "instagram_username": ig_username,
-        "facebook_page_name": page_name,
-    }
+    frontend_url = settings.FRONTEND_URL.rstrip("/")
+    return RedirectResponse(
+        url=f"{frontend_url}/onboarding?connected=true&username={ig_username}",
+        status_code=302,
+    )
 
 
 # ─── GET /meta/status ────────────────────────────────────────────

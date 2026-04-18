@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_REDIRECT_URI: str = ""  # ex: https://espectra-api-production.up.railway.app/meta/callback
+    FRONTEND_URL: str = "http://localhost:3000"  # ex: https://autopost-frontend-one.vercel.app
 
     # ─── Segundo Cérebro ─────────────────────────────────────
     # Em produção/local: aponta para o vault Obsidian
