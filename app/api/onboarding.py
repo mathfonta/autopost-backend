@@ -66,7 +66,6 @@ async def setup_onboarding(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     client.brand_profile = brand_profile
-    client.company_name = body.company_name.strip()
     await db.commit()
     logger.info(f"[onboarding] setup direto salvo client_id={current_client.id}")
     return None
