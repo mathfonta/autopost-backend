@@ -112,6 +112,10 @@ async def get_status(
     current_client: Client = Depends(get_current_client),
 ):
     """Retorna o status atual do onboarding do cliente."""
+    # Se brand_profile já foi salvo (via /setup ou agente), onboarding está concluído
+    if current_client.brand_profile:
+        return OnboardingStatus(status="done", brand_profile=current_client.brand_profile)
+
     session = await onboarding.get_session(str(current_client.id))
     if session is None:
         return OnboardingStatus(status="not_started")
