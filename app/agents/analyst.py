@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Modelo mais barato para análise de imagem — Claude Haiku
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 300
+MAX_TOKENS = 1024
 
 # Mensagens de erro amigáveis por motivo de reprovação
 _QUALITY_MESSAGES = {
@@ -144,7 +144,12 @@ async def analyze_photo_with_ai(
     logger.info(f"[analyst] resposta bruta: {raw[:200]}")
 
     try:
-        result = json.loads(raw)
+        # Remove markdown code fences se presentes
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
+            cleaned = cleaned.lstrip("json").strip()
+        result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude retornou JSON inválido: {raw[:300]}") from e
 
