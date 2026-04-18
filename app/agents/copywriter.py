@@ -20,7 +20,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 600
+MAX_TOKENS = 1024
 MAX_CAPTION_CHARS = 2200
 
 # Horários de pico por segmento (fallback se Claude não sugerir)
@@ -141,7 +141,11 @@ FOTO:
     logger.info(f"[copywriter] resposta bruta: {raw[:200]}")
 
     try:
-        result = json.loads(raw)
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
+            cleaned = cleaned.lstrip("json").strip()
+        result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude retornou JSON inválido: {raw[:300]}") from e
 
