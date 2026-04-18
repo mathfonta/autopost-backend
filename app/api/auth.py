@@ -8,14 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.core.database import get_db
 from app.core.auth import get_current_client
-from app.core.supabase import supabase_sign_up, supabase_sign_in, supabase_refresh
+from app.core.supabase import supabase_sign_up, supabase_sign_in, supabase_refresh, supabase_update_password, supabase_reset_password_email
 from app.models.client import Client
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
     RefreshRequest,
+    ForgotPasswordRequest,
+    UpdatePasswordRequest,
     TokenResponse,
     ClientResponse,
 )
@@ -115,6 +118,34 @@ async def refresh(body: RefreshRequest):
         refresh_token=session.refresh_token,
         expires_in=session.expires_in or 3600,
     )
+
+
+# ─── Forgot Password ─────────────────────────────────────────
+
+@router.post("/forgot-password", status_code=204)
+async def forgot_password(body: ForgotPasswordRequest):
+    """Envia e-mail de recuperação. Sempre retorna 204 (não revela se email existe)."""
+    settings = get_settings()
+    redirect_to = f"{settings.FRONTEND_URL}/reset-password"
+    try:
+        await supabase_reset_password_email(body.email, redirect_to)
+    except Exception:
+        pass  # silencioso — não revela se o email existe
+    return None
+
+
+# ─── Update Password (recovery flow) ────────────────────────
+
+@router.post("/update-password", status_code=204)
+async def update_password(body: UpdatePasswordRequest):
+    """Atualiza senha usando o access_token recebido do link de recuperação Supabase."""
+    try:
+        await supabase_update_password(body.access_token, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Não foi possível atualizar a senha")
+    return None
 
 
 # ─── Me ──────────────────────────────────────────────────────
