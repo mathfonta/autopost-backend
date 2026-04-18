@@ -281,8 +281,13 @@ def publish_post(self, request_id: str) -> str:
 
         req = _run_sync(_get_request_with_client(request_id))
 
-        # URL da imagem processada (fallback para original se Designer não rodou)
-        image_url = req["design_result"].get("processed_photo_url") or req["photo_url"]
+        # Gera presigned URL pública para o Instagram acessar a imagem do R2
+        from app.core.storage import generate_presigned_url
+        r2_key = req["design_result"].get("r2_key") or req.get("photo_key", "")
+        if r2_key:
+            image_url = generate_presigned_url(r2_key, expires_in=3600)
+        else:
+            image_url = req["design_result"].get("processed_photo_url") or req["photo_url"]
         full_caption = build_full_caption(req["copy_result"])
 
         access_token = req["meta_access_token"]

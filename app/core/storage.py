@@ -60,6 +60,18 @@ async def download_from_r2(key: str) -> bytes:
     return data
 
 
+def generate_presigned_url(key: str, expires_in: int = 3600) -> str:
+    """Gera URL pré-assinada (pública por tempo limitado) para um objeto no R2."""
+    settings = get_settings()
+    client = _get_r2_client()
+    url = client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.CLOUDFLARE_R2_BUCKET, "Key": key},
+        ExpiresIn=expires_in,
+    )
+    return url
+
+
 async def upload_to_r2(key: str, data: bytes, content_type: str = "image/jpeg") -> str:
     """Upload bytes para Cloudflare R2. Retorna a URL pública do objeto."""
     loop = asyncio.get_event_loop()
