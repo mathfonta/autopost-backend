@@ -236,6 +236,7 @@ def prepare_design(self, request_id: str) -> str:
                 req["photo_url"],
                 req["analysis_result"],
                 req["brand_profile"],
+                req.get("photo_key", ""),
             )
         )
 

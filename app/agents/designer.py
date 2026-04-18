@@ -26,8 +26,12 @@ DEFAULT_PRIMARY_COLOR = "#1A3C6E"
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-async def _download_image(url: str) -> Image.Image:
-    """Baixa imagem de URL e retorna objeto PIL."""
+async def _download_image(url: str, r2_key: str = "") -> Image.Image:
+    """Baixa imagem via R2 (boto3) se tiver r2_key, senão tenta HTTP."""
+    if r2_key:
+        from app.core.storage import download_from_r2
+        data = await download_from_r2(r2_key)
+        return Image.open(io.BytesIO(data)).convert("RGBA")
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url)
         response.raise_for_status()
@@ -164,6 +168,7 @@ async def process_image(
     photo_url: str,
     analysis_result: dict,
     brand_profile: dict,
+    photo_key: str = "",
 ) -> dict:
     """
     Processa a imagem e faz upload para Cloudflare R2.
@@ -190,7 +195,7 @@ async def process_image(
 
     if content_type == "antes_depois":
         design_type = "antes_depois"
-        original = await _download_image(photo_url)
+        original = await _download_image(photo_url, photo_key)
         img = _process_antes_depois(original, logo)
 
     elif not publish_clean or content_type in ("dica", "promocao"):
@@ -199,7 +204,7 @@ async def process_image(
 
     else:
         design_type = "clean_photo"
-        original = await _download_image(photo_url)
+        original = await _download_image(photo_url, photo_key)
         img = _process_clean_photo(original, logo)
 
     jpeg_bytes = _to_jpeg(img)
