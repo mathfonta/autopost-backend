@@ -30,7 +30,7 @@ def _fake_client():
     return client
 
 
-def _fake_content_request(status=ContentStatus.pending, client_id=None):
+def _fake_content_request(status=ContentStatus.pending, client_id=None, retry_count=0):
     req = MagicMock()
     req.id = REQUEST_ID
     req.client_id = client_id or CLIENT_ID
@@ -44,6 +44,9 @@ def _fake_content_request(status=ContentStatus.pending, client_id=None):
     req.copy_result = None
     req.design_result = None
     req.publish_result = None
+    req.caption_edited = False
+    req.retry_count = retry_count
+    req.content_type = None
     req.created_at = datetime.now(timezone.utc)
     req.updated_at = datetime.now(timezone.utc)
     return req
@@ -202,7 +205,10 @@ def test_get_content_request_success():
     app.dependency_overrides[get_current_client] = _auth_override
     app.dependency_overrides[get_db] = _db_override
 
-    with TestClient(app) as client:
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.generate_presigned_url", return_value="https://r2.example.com/uploads/test.jpg"),
+    ):
         response = client.get(
             f"/content-requests/{REQUEST_ID}",
             headers={"Authorization": "Bearer token"},
@@ -322,6 +328,172 @@ def test_list_content_requests_empty():
     data = response.json()
     assert data["total"] == 0
     assert data["items"] == []
+
+
+# ─── PATCH /content-requests/{id} ──────────────────────────────
+
+
+def test_patch_caption_success():
+    """PATCH com status awaiting_approval deve atualizar a legenda."""
+    fake_req = _fake_content_request(status=ContentStatus.awaiting_approval)
+    fake_req.copy_result = {"caption": "legenda original", "hashtags": [], "cta": "", "suggested_time": ""}
+    fake_req.caption_edited = False
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/content-requests/{REQUEST_ID}",
+            json={"caption": "legenda editada pelo cliente"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert fake_req.caption_edited is True
+    assert fake_req.copy_result["caption"] == "legenda editada pelo cliente"
+
+
+def test_patch_caption_wrong_status():
+    """PATCH com status diferente de awaiting_approval deve retornar 409."""
+    fake_req = _fake_content_request(status=ContentStatus.published)
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/content-requests/{REQUEST_ID}",
+            json={"caption": "nova legenda"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert "awaiting_approval" in response.json()["detail"]
+
+
+def test_patch_caption_wrong_client():
+    """PATCH de outro cliente deve retornar 403."""
+    other_req = _fake_content_request(
+        status=ContentStatus.awaiting_approval,
+        client_id=uuid.uuid4(),
+    )
+
+    async def _db_override():
+        yield _make_db_with_request(other_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/content-requests/{REQUEST_ID}",
+            json={"caption": "hack"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+# ─── POST /content-requests/{id}/retry ──────────────────────────
+
+
+def test_retry_success():
+    """Retry com status awaiting_approval e count < 3 deve disparar nova geração."""
+    fake_req = _fake_content_request(status=ContentStatus.awaiting_approval, retry_count=0)
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.retry_generate_copy") as mock_retry,
+    ):
+        mock_retry.delay = MagicMock()
+        response = client.post(f"/content-requests/{REQUEST_ID}/retry")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["retry_count"] == 1
+    assert fake_req.retry_count == 1
+
+
+def test_retry_max_reached():
+    """Retry com retry_count >= 3 deve retornar 422."""
+    fake_req = _fake_content_request(status=ContentStatus.awaiting_approval, retry_count=3)
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(f"/content-requests/{REQUEST_ID}/retry")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "Máximo" in response.json()["detail"]
+
+
+def test_retry_wrong_status():
+    """Retry com status != awaiting_approval deve retornar 409."""
+    fake_req = _fake_content_request(status=ContentStatus.published)
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(f"/content-requests/{REQUEST_ID}/retry")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+
+
+def test_submit_photo_with_content_type():
+    """Upload com content_type deve salvar o campo no request."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "obra_concluida"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/photo.jpg"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-123"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "obra_concluida"},
+            files={"photo": ("test.jpg", FAKE_PHOTO_BYTES, "image/jpeg")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
 
 
 def test_submit_photo_requires_auth():

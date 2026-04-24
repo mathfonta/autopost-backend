@@ -35,6 +35,14 @@ _DEFAULT_TIMES = {
     "default":             "19:00",
 }
 
+CONTENT_TYPE_PROMPTS = {
+    "post_simples":    "Post direto apresentando o trabalho. Tom: profissional e claro.",
+    "obra_andamento":  "Obra em progresso. Tom: transparência e confiança no processo.",
+    "obra_concluida":  "Resultado final entregue. Tom: celebração, orgulho e resultado.",
+    "engajamento":     "Post para gerar interação. Tom: pergunta direta, convite à participação.",
+    "bastidores":      "Momento humano da equipe. Tom: autêntico, próximo, humanizado.",
+}
+
 _SYSTEM_PROMPT = """\
 Você é um especialista em copywriting para redes sociais de pequenas empresas brasileiras.
 Crie uma legenda para Instagram baseada EXCLUSIVAMENTE nas informações fornecidas.
@@ -65,6 +73,7 @@ Regras das hashtags:
 async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
+    user_content_type: str | None = None,
 ) -> dict:
     """
     Gera legenda, hashtags e CTA para o post usando Claude Sonnet.
@@ -112,6 +121,11 @@ async def generate_copy_with_ai(
             "Use o horário e CTA sugeridos pelos padrões como referência prioritária."
         )
 
+    # Injeta intenção do cliente se fornecida
+    intent_section = ""
+    if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS:
+        intent_section = f"\nINTENÇÃO DO CLIENTE: {CONTENT_TYPE_PROMPTS[user_content_type]}"
+
     user_message = f"""
 Crie uma legenda para este post:
 
@@ -124,10 +138,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{patterns_section}
+- Etapa/detalhe: {stage or "não informado"}{intent_section}{patterns_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,

@@ -61,6 +61,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "copy_result": req.copy_result or {},
             "design_result": req.design_result or {},
             "publish_result": req.publish_result or {},
+            "content_type": req.content_type,
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
             "instagram_business_id": (client.instagram_business_id or "") if client else "",
@@ -194,7 +195,11 @@ def generate_copy(self, request_id: str) -> str:
     try:
         req = _run_sync(_get_request_with_client(request_id))
         copy = _run_sync(
-            generate_copy_with_ai(req["analysis_result"], req["brand_profile"])
+            generate_copy_with_ai(
+                req["analysis_result"],
+                req["brand_profile"],
+                user_content_type=req.get("content_type"),
+            )
         )
 
         _run_sync(_update_status(
@@ -209,6 +214,45 @@ def generate_copy(self, request_id: str) -> str:
 
     except Exception as exc:
         logger.error(f"[generate_copy] erro: {exc}")
+        _run_sync(_update_status(request_id, ContentStatus.failed, error=str(exc)))
+        raise self.retry(exc=exc, countdown=30)
+
+
+# ─── Task 2b: Retry Copywriter (sem re-analisar foto) ───────────
+
+@celery_app.task(bind=True, name="pipeline.retry_generate_copy", max_retries=2)
+def retry_generate_copy(self, request_id: str) -> str:
+    """
+    Regera apenas a legenda reutilizando a análise já existente.
+    Não rechama o Agente Analista nem o Designer.
+    Ao concluir, restaura status para awaiting_approval.
+    """
+    from app.agents.copywriter import generate_copy_with_ai
+
+    logger.info(f"[retry_generate_copy] request_id={request_id}")
+
+    try:
+        req = _run_sync(_get_request_with_client(request_id))
+        copy = _run_sync(
+            generate_copy_with_ai(
+                req["analysis_result"],
+                req["brand_profile"],
+                user_content_type=req.get("content_type"),
+            )
+        )
+
+        _run_sync(_update_status(
+            request_id,
+            ContentStatus.awaiting_approval,
+            result_field="copy_result",
+            result_data=copy,
+        ))
+
+        logger.info(f"[retry_generate_copy] concluído request_id={request_id}")
+        return request_id
+
+    except Exception as exc:
+        logger.error(f"[retry_generate_copy] erro: {exc}")
         _run_sync(_update_status(request_id, ContentStatus.failed, error=str(exc)))
         raise self.retry(exc=exc, countdown=30)
 

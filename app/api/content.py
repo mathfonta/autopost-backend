@@ -10,7 +10,7 @@ import uuid
 import logging
 from math import ceil
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,13 +19,15 @@ from app.core.database import get_db
 from app.core.storage import upload_to_r2, generate_presigned_url
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
-from app.tasks.pipeline import start_content_pipeline, publish_post
+from app.tasks.pipeline import start_content_pipeline, publish_post, retry_generate_copy
 from app.schemas.content import (
     ApproveResponse,
     ContentRequestDetailResponse,
     ContentRequestListResponse,
     ContentRequestResponse,
+    PatchCaptionRequest,
     RejectRequest,
+    RetryResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,7 @@ def _freshen_urls(req: ContentRequest) -> ContentRequest:
 @router.post("", response_model=ContentRequestResponse, status_code=201)
 async def submit_photo(
     photo: UploadFile = File(...),
+    content_type: str | None = Form(None),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
@@ -70,12 +73,12 @@ async def submit_photo(
     """
     from app.tasks.pipeline import start_content_pipeline
 
-    # ── Valida tipo ──
-    content_type = photo.content_type or ""
-    if content_type not in ALLOWED_CONTENT_TYPES:
+    # ── Valida tipo da foto ──
+    photo_content_type = photo.content_type or ""
+    if photo_content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=422,
-            detail=f"Formato inválido: {content_type}. Use JPEG, PNG ou WEBP.",
+            detail=f"Formato inválido: {photo_content_type}. Use JPEG, PNG ou WEBP.",
         )
 
     # ── Lê e valida tamanho ──
@@ -89,7 +92,7 @@ async def submit_photo(
     # ── Upload para R2 ──
     key = f"uploads/{current_client.id}/{uuid.uuid4()}.jpg"
     try:
-        photo_url = await upload_to_r2(key, data, "image/jpeg")
+        photo_url = await upload_to_r2(key, data, photo_content_type)
     except Exception as exc:
         logger.error(f"[content] falha no upload R2: {exc}")
         raise HTTPException(status_code=503, detail="Serviço de armazenamento indisponível. Tente novamente.")
@@ -102,6 +105,7 @@ async def submit_photo(
         photo_url=photo_url,
         source_channel="app",
         status=ContentStatus.pending,
+        content_type=content_type,
     )
     db.add(req)
     await db.commit()
@@ -175,6 +179,95 @@ async def list_content_requests(
         page_size=page_size,
         pages=ceil(total / page_size) if total > 0 else 1,
     )
+
+
+# ─── PATCH /content-requests/{id} ──────────────────────────────
+
+@router.patch("/{request_id}", response_model=ContentRequestDetailResponse)
+async def patch_caption(
+    request_id: uuid.UUID,
+    body: PatchCaptionRequest,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Atualiza a legenda de um post aguardando aprovação.
+    Só permitido quando status == awaiting_approval.
+    """
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status != ContentStatus.awaiting_approval:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Legenda só pode ser editada quando status é awaiting_approval. Status atual: {req.status.value}.",
+        )
+
+    copy_result = dict(req.copy_result or {})
+    copy_result["caption"] = body.caption
+    req.copy_result = copy_result
+    req.caption_edited = True
+    await db.commit()
+    await db.refresh(req)
+
+    logger.info(f"[content] legenda editada id={req.id}")
+    return _freshen_urls(req)
+
+
+# ─── POST /content-requests/{id}/retry ─────────────────────────
+
+RETRY_MAX = 3
+
+
+@router.post("/{request_id}/retry", response_model=RetryResponse)
+async def retry_content_request(
+    request_id: uuid.UUID,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Regera a legenda do post sem reiniciar o fluxo completo.
+    Só permitido quando status == awaiting_approval e retry_count < 3.
+    """
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status != ContentStatus.awaiting_approval:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Retry só permitido quando status é awaiting_approval. Status atual: {req.status.value}.",
+        )
+
+    if req.retry_count >= RETRY_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Máximo de {RETRY_MAX} tentativas atingido.",
+        )
+
+    req.retry_count += 1
+    req.status = ContentStatus.copy
+    await db.commit()
+
+    retry_generate_copy.delay(str(req.id))
+
+    logger.info(f"[content] retry disparado id={req.id} retry_count={req.retry_count}")
+    return RetryResponse(id=req.id, status=ContentStatus.copy, retry_count=req.retry_count)
 
 
 # ─── POST /content-requests/{id}/approve ────────────────────────

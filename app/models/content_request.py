@@ -75,6 +75,22 @@ class ContentRequest(Base, TenantMixin):
         JSONB, nullable=True, comment="Output do Agente Publicador (IDs, permalink, métricas)"
     )
 
+    # ─── Intenção de conteúdo (selecionada pelo cliente antes do upload) ──
+    content_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="Intenção: post_simples | obra_andamento | obra_concluida | engajamento | bastidores"
+    )
+
+    # ─── Edição e retry pelo cliente ────────────────────────────
+    caption_edited: Mapped[bool] = mapped_column(
+        default=False, nullable=False, server_default="false",
+        comment="True quando o cliente editou a legenda gerada pelo agente"
+    )
+    retry_count: Mapped[int] = mapped_column(
+        default=0, nullable=False, server_default="0",
+        comment="Número de vezes que o cliente pediu nova versão da legenda"
+    )
+
     # ─── Timestamps ──────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

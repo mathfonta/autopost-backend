@@ -34,10 +34,18 @@ class ContentRequestDetailResponse(BaseModel):
     copy_result: dict[str, Any] | None = None
     design_result: dict[str, Any] | None = None
     publish_result: dict[str, Any] | None = None
+    caption_edited: bool = False
+    retry_count: int = 0
+    content_type: str | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PatchCaptionRequest(BaseModel):
+    """Body do endpoint PATCH /{id} — atualiza legenda."""
+    caption: str
 
 
 class ContentRequestListResponse(BaseModel):
@@ -58,3 +66,10 @@ class ApproveResponse(BaseModel):
 class RejectRequest(BaseModel):
     """Body opcional do endpoint de rejeição."""
     reason: str | None = None
+
+
+class RetryResponse(BaseModel):
+    """Resposta do endpoint de retry."""
+    id: uuid.UUID
+    status: ContentStatus
+    retry_count: int

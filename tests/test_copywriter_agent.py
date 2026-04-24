@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.copywriter import generate_copy_with_ai, MAX_CAPTION_CHARS
+from app.agents.copywriter import generate_copy_with_ai, MAX_CAPTION_CHARS, CONTENT_TYPE_PROMPTS
 
 
 # ─── Helpers ────────────────────────────────────────────────────
@@ -207,6 +207,47 @@ async def test_invalid_json_raises_value_error():
 
         with pytest.raises(ValueError, match="JSON inválido"):
             await generate_copy_with_ai(ANALYSIS, BRAND)
+
+
+@pytest.mark.asyncio
+async def test_user_content_type_injected_in_prompt():
+    """Intenção do cliente deve aparecer no prompt enviado ao Claude."""
+    captured = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs)
+        return _mock_claude_response(GOOD_RESPONSE)
+
+    with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create = capture
+
+        await generate_copy_with_ai(ANALYSIS, BRAND, user_content_type="obra_concluida")
+
+    user_msg = captured[0]["messages"][0]["content"]
+    assert "INTENÇÃO DO CLIENTE" in user_msg
+    assert CONTENT_TYPE_PROMPTS["obra_concluida"] in user_msg
+
+
+@pytest.mark.asyncio
+async def test_no_intent_section_without_user_content_type():
+    """Sem intenção selecionada, prompt não deve ter seção INTENÇÃO DO CLIENTE."""
+    captured = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs)
+        return _mock_claude_response(GOOD_RESPONSE)
+
+    with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create = capture
+
+        await generate_copy_with_ai(ANALYSIS, BRAND)
+
+    user_msg = captured[0]["messages"][0]["content"]
+    assert "INTENÇÃO DO CLIENTE" not in user_msg
 
 
 @pytest.mark.asyncio
