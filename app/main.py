@@ -2,6 +2,7 @@
 AutoPost API — Ponto de entrada principal.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +21,21 @@ from app.api.push import router as push_router
 settings = get_settings()
 
 
+def _run_migrations() -> None:
+    from alembic.config import Config
+    from alembic import command
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup — aplica migrations pendentes (idempotente)
+    try:
+        await asyncio.to_thread(_run_migrations)
+        print("✅ Migrations aplicadas")
+    except Exception as exc:
+        print(f"⚠️  Erro ao aplicar migrations: {exc}")
     print(f"🚀 AutoPost API v{settings.APP_VERSION} iniciando [{settings.ENV}]")
     yield
     # Shutdown
