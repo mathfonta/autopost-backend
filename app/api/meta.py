@@ -19,7 +19,6 @@ from app.core.auth import get_current_client
 from app.core.database import get_db
 from datetime import datetime, timezone, timedelta
 
-from app.config import get_settings
 from app.core.meta_oauth import (
     build_auth_url,
     create_state_token,
