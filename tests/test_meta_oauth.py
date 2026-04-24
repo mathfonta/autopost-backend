@@ -163,16 +163,15 @@ def test_callback_success():
         )
 
         with patch("app.api.meta.get_settings", return_value=_mock_settings()):
-            with TestClient(app) as client:
+            with TestClient(app, follow_redirects=False) as client:
                 response = client.get(f"/meta/callback?code=auth-code-abc&state={state}")
 
     app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["connected"] is True
-    assert data["instagram_username"] == "empresa_teste_ig"
-    assert data["facebook_page_name"] == "Empresa Teste"
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert "connected=true" in location
+    assert "username=empresa_teste_ig" in location
 
 
 def test_callback_saves_token_and_ids():
@@ -296,4 +295,128 @@ def test_status_requires_auth():
     """GET /meta/status sem Bearer token deve retornar 401/403."""
     with TestClient(app) as client:
         response = client.get("/meta/status")
+    assert response.status_code in (401, 403)
+
+
+def test_status_includes_days_until_expiry():
+    """GET /meta/status com token deve retornar days_until_expiry e token_expiring_soon."""
+    app.dependency_overrides[get_current_client] = _auth_connected_override
+
+    with TestClient(app) as client:
+        response = client.get("/meta/status")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "days_until_expiry" in data
+    assert "token_expiring_soon" in data
+    assert data["days_until_expiry"] >= 50
+    assert data["token_expiring_soon"] is False
+
+
+def test_status_expiring_soon_flag():
+    """token_expiring_soon deve ser True quando expira em ≤10 dias."""
+    def _almost_expired():
+        client = MagicMock()
+        client.id = CLIENT_ID
+        client.is_active = True
+        client.meta_access_token = "expiring-token"
+        client.meta_token_expires_at = datetime.now(timezone.utc) + timedelta(days=5)
+        client.instagram_username = "user"
+        client.facebook_page_name = "Page"
+        return client
+
+    async def _override():
+        return _almost_expired()
+
+    app.dependency_overrides[get_current_client] = _override
+
+    with TestClient(app) as client:
+        response = client.get("/meta/status")
+
+    app.dependency_overrides.clear()
+
+    data = response.json()
+    assert data["token_expiring_soon"] is True
+    assert data["days_until_expiry"] <= 10
+
+
+# ─── POST /meta/refresh ──────────────────────────────────────────
+
+
+def test_refresh_renews_token():
+    """POST /meta/refresh deve renovar o token e retornar renewed: true."""
+    client_mock = _fake_client(connected=True)
+
+    async def _db_override():
+        yield _make_db()
+
+    app.dependency_overrides[get_current_client] = _auth_connected_override
+    app.dependency_overrides[get_db] = _db_override
+
+    new_expires = datetime.now(timezone.utc) + timedelta(days=60)
+
+    with patch(
+        "app.api.meta.exchange_for_long_lived_token",
+        new=AsyncMock(return_value=("new-long-token", new_expires)),
+    ):
+        with patch("app.api.meta.get_settings", return_value=_mock_settings()):
+            with TestClient(app) as client:
+                response = client.post("/meta/refresh")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["renewed"] is True
+    assert "token_expires_at" in data
+    assert data["days_until_expiry"] == 60
+
+
+def test_refresh_without_meta_connected_returns_400():
+    """POST /meta/refresh sem conta Meta conectada deve retornar 400."""
+    app.dependency_overrides[get_current_client] = _auth_override  # not connected
+
+    async def _db_override():
+        yield _make_db()
+
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post("/meta/refresh")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "Nenhuma conta Meta" in response.json()["detail"]
+
+
+def test_refresh_graph_api_failure_returns_502():
+    """POST /meta/refresh com falha na Graph API deve retornar 502."""
+    app.dependency_overrides[get_current_client] = _auth_connected_override
+
+    async def _db_override():
+        yield _make_db()
+
+    app.dependency_overrides[get_db] = _db_override
+
+    with patch(
+        "app.api.meta.exchange_for_long_lived_token",
+        new=AsyncMock(side_effect=Exception("Graph API error")),
+    ):
+        with patch("app.api.meta.get_settings", return_value=_mock_settings()):
+            with TestClient(app) as client:
+                response = client.post("/meta/refresh")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 502
+    assert "renovar" in response.json()["detail"].lower()
+
+
+def test_refresh_requires_auth():
+    """POST /meta/refresh sem Bearer token deve retornar 401/403."""
+    with TestClient(app) as client:
+        response = client.post("/meta/refresh")
     assert response.status_code in (401, 403)

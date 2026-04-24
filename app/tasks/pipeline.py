@@ -496,6 +496,73 @@ def promote_to_global_cerebro(self) -> str:
         raise self.retry(exc=exc, countdown=3600)  # retry em 1h
 
 
+# ─── Task 8: Renovação Automática do Token Meta ──────────────────
+
+@celery_app.task(bind=True, name="pipeline.renew_meta_tokens", max_retries=1)
+def renew_meta_tokens(self) -> str:
+    """
+    Renova tokens Meta que expiram em ≤10 dias.
+    Agendado pelo Celery Beat toda manhã às 07:00 (America/Sao_Paulo).
+    Long-Lived Token (~60 dias) pode ser renovado antes de expirar com o mesmo endpoint.
+    """
+    from datetime import timedelta
+    from sqlalchemy import and_
+
+    async def _renew_all():
+        from app.core.database import WorkerSessionLocal
+        from app.core.meta_oauth import exchange_for_long_lived_token
+        from app.config import get_settings
+
+        settings = get_settings()
+        now = datetime.now(timezone.utc)
+        threshold = now + timedelta(days=10)
+
+        renewed = 0
+        failed = 0
+
+        async with WorkerSessionLocal() as db:
+            from app.models.client import Client
+            result = await db.execute(
+                select(Client).where(
+                    and_(
+                        Client.meta_access_token.isnot(None),
+                        Client.meta_token_expires_at <= threshold,
+                    )
+                )
+            )
+            clients = result.scalars().all()
+
+            logger.info(f"[renew_meta_tokens] {len(clients)} cliente(s) com token expirando em ≤10 dias")
+
+            for client in clients:
+                try:
+                    new_token, new_expires_at = await exchange_for_long_lived_token(
+                        short_token=client.meta_access_token,
+                        app_id=settings.META_APP_ID,
+                        app_secret=settings.META_APP_SECRET,
+                    )
+                    client.meta_access_token = new_token
+                    client.meta_token_expires_at = new_expires_at
+                    renewed += 1
+                    logger.info(f"[renew_meta_tokens] token renovado client_id={client.id} expires={new_expires_at.date()}")
+                except Exception as exc:
+                    failed += 1
+                    logger.error(f"[renew_meta_tokens] falha ao renovar client_id={client.id}: {exc}")
+
+            await db.commit()
+
+        return f"renovados={renewed} falhas={failed}"
+
+    logger.info("[renew_meta_tokens] iniciando renovação diária de tokens Meta")
+    try:
+        result = _run_sync(_renew_all())
+        logger.info(f"[renew_meta_tokens] concluído — {result}")
+        return result
+    except Exception as exc:
+        logger.error(f"[renew_meta_tokens] erro geral: {exc}")
+        raise self.retry(exc=exc, countdown=3600)
+
+
 # ─── Beat Schedule ───────────────────────────────────────────────
 
 celery_app.conf.beat_schedule = {
@@ -506,6 +573,10 @@ celery_app.conf.beat_schedule = {
     "promote-to-global-cerebro": {
         "task": "pipeline.promote_to_global_cerebro",
         "schedule": crontab(hour=9, minute=0, day_of_week=1, day_of_month="1-7"),  # 1ª segunda do mês 09:00
+    },
+    "renew-meta-tokens": {
+        "task": "pipeline.renew_meta_tokens",
+        "schedule": crontab(hour=7, minute=0),  # todo dia às 07:00
     },
 }
 
