@@ -37,6 +37,8 @@ def _fake_content_request(status=ContentStatus.pending, client_id=None, retry_co
     req.status = status
     req.photo_url = "https://r2.example.com/uploads/test.jpg"
     req.photo_key = f"uploads/{CLIENT_ID}/test.jpg"
+    req.photo_keys = None
+    req.photo_urls = None
     req.source_channel = "app"
     req.celery_task_id = "celery-task-abc"
     req.error_message = None
@@ -116,7 +118,7 @@ def test_submit_photo_invalid_format():
     app.dependency_overrides.clear()
 
     assert response.status_code == 422
-    assert "Formato inválido" in response.json()["detail"]
+    assert "formato inválido" in response.json()["detail"]
 
 
 def test_submit_photo_too_large():
@@ -506,3 +508,296 @@ def test_submit_photo_requires_auth():
 
     # FastAPI HTTPBearer retorna 401 quando o header Authorization está ausente
     assert response.status_code == 401
+
+
+# ─── Story 6.1 — Multi-foto ─────────────────────────────────────
+
+
+def test_submit_multi_photo_carousel_success():
+    """Upload de 2 fotos com content_type=carousel deve retornar 201."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "carousel"
+    fake_req.photo_keys = [f"uploads/{CLIENT_ID}/a.jpg", f"uploads/{CLIENT_ID}/b.jpg"]
+    fake_req.photo_urls = ["https://r2.example.com/a.jpg", "https://r2.example.com/b.jpg"]
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/photo.jpg"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-123"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "carousel"},
+            files=[
+                ("photos", ("a.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("b.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+            ],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_submit_multi_photo_before_after_success():
+    """Upload de exatamente 2 fotos com content_type=before_after deve retornar 201."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "before_after"
+    fake_req.photo_keys = [f"uploads/{CLIENT_ID}/antes.jpg", f"uploads/{CLIENT_ID}/depois.jpg"]
+    fake_req.photo_urls = ["https://r2.example.com/antes.jpg", "https://r2.example.com/depois.jpg"]
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/photo.jpg"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-123"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "before_after"},
+            files=[
+                ("photos", ("antes.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("depois.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+            ],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_submit_retrocompat_single_photo_field():
+    """Upload com campo legado `photo` deve continuar funcionando."""
+    fake_req = _fake_content_request()
+    fake_req.photo_keys = [f"uploads/{CLIENT_ID}/test.jpg"]
+    fake_req.photo_urls = ["https://r2.example.com/test.jpg"]
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/test.jpg"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-abc"),
+    ):
+        response = client.post(
+            "/content-requests",
+            files={"photo": ("test.jpg", FAKE_PHOTO_BYTES, "image/jpeg")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert "id" in response.json()
+
+
+def test_submit_no_photo_returns_422():
+    """POST sem nenhuma foto deve retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "post_simples"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "obrigatória" in response.json()["detail"]
+
+
+def test_submit_before_after_requires_exactly_2_photos():
+    """before_after com 1 foto deve retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "before_after"},
+            files=[("photos", ("only.jpg", FAKE_PHOTO_BYTES, "image/jpeg"))],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "before_after" in response.json()["detail"]
+    assert "2" in response.json()["detail"]
+
+
+def test_submit_before_after_rejects_3_photos():
+    """before_after com 3 fotos deve retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "before_after"},
+            files=[
+                ("photos", ("a.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("b.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("c.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+            ],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "before_after" in response.json()["detail"]
+
+
+def test_submit_carousel_requires_at_least_2_photos():
+    """carousel com 1 foto deve retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "carousel"},
+            files=[("photos", ("only.jpg", FAKE_PHOTO_BYTES, "image/jpeg"))],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "carousel" in response.json()["detail"]
+
+
+def test_submit_simple_type_rejects_2_photos():
+    """Tipos simples com 2 fotos devem retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "post_simples"},
+            files=[
+                ("photos", ("a.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("b.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+            ],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "simples" in response.json()["detail"]
+
+
+def test_submit_invalid_content_type_returns_422():
+    """content_type inválido deve retornar 422."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "tipo_invalido_xyz"},
+            files=[("photos", ("a.jpg", FAKE_PHOTO_BYTES, "image/jpeg"))],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "inválido" in response.json()["detail"]
+
+
+def test_submit_multi_photo_invalid_format_in_second_photo():
+    """Formato inválido na segunda foto deve retornar 422 com número da foto."""
+    async def _db_override():
+        yield _make_db_with_request()
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    # foto 1 passa validação e sobe para R2; foto 2 falha na validação de formato
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/a.jpg"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "carousel"},
+            files=[
+                ("photos", ("a.jpg", FAKE_PHOTO_BYTES, "image/jpeg")),
+                ("photos", ("b.pdf", b"%PDF", "application/pdf")),
+            ],
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "Foto 2" in response.json()["detail"]
+
+
+def test_freshen_urls_multi_photo():
+    """_freshen_urls deve regenerar photo_urls a partir de photo_keys."""
+    from app.api.content import _freshen_urls
+
+    fake_req = _fake_content_request()
+    fake_req.photo_keys = [
+        f"uploads/{CLIENT_ID}/a.jpg",
+        f"uploads/{CLIENT_ID}/b.jpg",
+    ]
+    fake_req.photo_urls = None
+    fake_req.design_result = None
+
+    with patch("app.api.content.generate_presigned_url", side_effect=lambda key, ttl: f"https://fresh.r2/{key}"):
+        result = _freshen_urls(fake_req)
+
+    assert result.photo_urls is not None
+    assert len(result.photo_urls) == 2
+    assert "a.jpg" in result.photo_urls[0]
+    assert "b.jpg" in result.photo_urls[1]
+
+
+def test_freshen_urls_single_photo_retrocompat():
+    """_freshen_urls com foto única não deve quebrar (retrocompat)."""
+    from app.api.content import _freshen_urls
+
+    fake_req = _fake_content_request()
+    fake_req.photo_keys = None
+    fake_req.photo_urls = None
+    fake_req.design_result = None
+
+    with patch("app.api.content.generate_presigned_url", return_value="https://fresh.r2/test.jpg"):
+        result = _freshen_urls(fake_req)
+
+    assert result.photo_url == "https://fresh.r2/test.jpg"
+    assert result.photo_urls is None

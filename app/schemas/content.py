@@ -27,6 +27,7 @@ class ContentRequestDetailResponse(BaseModel):
     id: uuid.UUID
     status: ContentStatus
     photo_url: str
+    photo_urls: list[str] | None = None
     source_channel: str
     celery_task_id: str | None = None
     error_message: str | None = None

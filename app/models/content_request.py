@@ -46,6 +46,12 @@ class ContentRequest(Base, TenantMixin):
     photo_url: Mapped[str] = mapped_column(
         String(1000), nullable=False, comment="URL pública temporária"
     )
+    photo_keys: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, comment="Chaves R2 de múltiplas fotos"
+    )
+    photo_urls: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, comment="URLs presigned de múltiplas fotos"
+    )
     source_channel: Mapped[str] = mapped_column(
         String(50), default="app", nullable=False,
         comment="app | whatsapp | google_drive | dropbox | onedrive"

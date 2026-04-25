@@ -40,6 +40,12 @@ ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 PRESIGNED_URL_TTL = 3600  # 1 hora
 
+VALID_CONTENT_TYPES = {
+    "post_simples", "obra_andamento", "obra_concluida",
+    "engajamento", "bastidores", "before_after", "carousel",
+}
+MULTI_PHOTO_TYPES = {"before_after", "carousel"}
+
 
 def _freshen_urls(req: ContentRequest) -> ContentRequest:
     """Substitui URLs do R2 por presigned URLs válidas por 1h."""
@@ -47,6 +53,15 @@ def _freshen_urls(req: ContentRequest) -> ContentRequest:
         req.photo_url = generate_presigned_url(req.photo_key, PRESIGNED_URL_TTL)
     except Exception:
         pass
+
+    if req.photo_keys:
+        fresh = []
+        for key in req.photo_keys:
+            try:
+                fresh.append(generate_presigned_url(key, PRESIGNED_URL_TTL))
+            except Exception:
+                fresh.append(req.photo_url)
+        req.photo_urls = fresh
 
     if req.design_result and req.design_result.get("r2_key"):
         try:
@@ -62,47 +77,78 @@ def _freshen_urls(req: ContentRequest) -> ContentRequest:
 
 @router.post("", response_model=ContentRequestResponse, status_code=201)
 async def submit_photo(
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
     content_type: str | None = Form(None),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Recebe uma foto, faz upload para R2 e dispara o pipeline de agentes.
-    Retorna imediatamente com o ID do request e o celery_task_id.
+    Recebe uma ou mais fotos, faz upload para R2 e dispara o pipeline.
+    Campo `photo` é mantido para retrocompatibilidade.
     """
     from app.tasks.pipeline import start_content_pipeline
 
-    # ── Valida tipo da foto ──
-    photo_content_type = photo.content_type or ""
-    if photo_content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Formato inválido: {photo_content_type}. Use JPEG, PNG ou WEBP.",
-        )
+    # ── Normaliza para effective_photos ──
+    if photos:
+        effective_photos = photos
+    elif photo:
+        effective_photos = [photo]
+    else:
+        raise HTTPException(status_code=422, detail="Ao menos uma foto é obrigatória.")
 
-    # ── Lê e valida tamanho ──
-    data = await photo.read()
-    if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Arquivo muito grande: {len(data) // (1024*1024)}MB. Máximo: 20MB.",
-        )
+    # ── Valida content_type ──
+    if content_type and content_type not in VALID_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail=f"content_type inválido: {content_type}")
+
+    # ── Valida contagem por tipo ──
+    n = len(effective_photos)
+    if content_type == "before_after" and n != 2:
+        raise HTTPException(status_code=422, detail="before_after requer exatamente 2 fotos.")
+    if content_type == "carousel" and not (2 <= n <= 10):
+        raise HTTPException(status_code=422, detail="carousel requer 2–10 fotos.")
+    if content_type and content_type not in MULTI_PHOTO_TYPES and n != 1:
+        raise HTTPException(status_code=422, detail="Tipos simples aceitam apenas 1 foto.")
+    if n > 10:
+        raise HTTPException(status_code=422, detail="Máximo de 10 fotos por upload.")
 
     # ── Upload para R2 ──
-    key = f"uploads/{current_client.id}/{uuid.uuid4()}.jpg"
-    try:
-        photo_url = await upload_to_r2(key, data, photo_content_type)
-    except Exception as exc:
-        logger.error(f"[content] falha no upload R2: {exc}")
-        raise HTTPException(status_code=503, detail="Serviço de armazenamento indisponível. Tente novamente.")
+    keys: list[str] = []
+    urls: list[str] = []
+
+    for i, upload in enumerate(effective_photos):
+        photo_content_type = upload.content_type or ""
+        if photo_content_type not in ALLOWED_CONTENT_TYPES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Foto {i + 1}: formato inválido ({photo_content_type}). Use JPEG, PNG ou WEBP.",
+            )
+
+        data = await upload.read()
+        if len(data) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Foto {i + 1}: arquivo muito grande ({len(data) // (1024 * 1024)}MB). Máximo: 20MB.",
+            )
+
+        key = f"uploads/{current_client.id}/{uuid.uuid4()}.jpg"
+        try:
+            url = await upload_to_r2(key, data, photo_content_type)
+        except Exception as exc:
+            logger.error(f"[content] falha no upload R2 foto {i + 1}: {exc}")
+            raise HTTPException(status_code=503, detail="Serviço de armazenamento indisponível. Tente novamente.")
+
+        keys.append(key)
+        urls.append(url)
 
     # ── Cria ContentRequest ──
     req = ContentRequest(
         id=uuid.uuid4(),
         client_id=current_client.id,
-        photo_key=key,
-        photo_url=photo_url,
+        photo_key=keys[0],
+        photo_url=urls[0],
+        photo_keys=keys,
+        photo_urls=urls,
         source_channel="app",
         status=ContentStatus.pending,
         content_type=content_type,
@@ -117,7 +163,7 @@ async def submit_photo(
     await db.commit()
     await db.refresh(req)
 
-    logger.info(f"[content] request criado id={req.id} task_id={task_id}")
+    logger.info(f"[content] request criado id={req.id} n_photos={n} task_id={task_id}")
     return req
 
 
