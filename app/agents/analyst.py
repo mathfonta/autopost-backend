@@ -42,9 +42,12 @@ Retorne exatamente este formato:
   "quality": "good" | "acceptable" | "bad",
   "quality_reason": "dark" | "blurry" | "low_res" | "obstructed" | "ok",
   "content_type": "obra_realizada" | "antes_depois" | "dica" | "promocao" | "outro",
-  "description": "<descrição objetiva do que aparece na foto, em português, máximo 2 frases>",
+  "description": "<descrição detalhada do que aparece na foto, em português, 4 a 5 frases: o que está sendo feito ou exibido, materiais e elementos visuais identificados, ambiente e iluminação, estado de conclusão do trabalho, e qualquer detalhe relevante para uma legenda de marketing>",
+  "elementos_visuais": "<lista separada por vírgulas dos principais elementos visíveis: materiais, objetos, ferramentas, acabamentos, cores predominantes>",
+  "ambiente": "interno" | "externo" | "misto",
+  "nivel_acabamento": "bruto" | "em_andamento" | "finalizado" | "nao_aplicavel",
   "publish_clean": true | false,
-  "stage": "<etapa da obra ou tipo de serviço, ex: acabamento, estrutura, reforma, etc. Deixe vazio se não aplicável>"
+  "stage": "<etapa da obra ou tipo de serviço, ex: acabamento, estrutura, reforma, pintura, etc. Deixe vazio se não aplicável>"
 }
 
 Regras:
@@ -52,6 +55,7 @@ Regras:
 - publish_clean = false quando for dica, promoção ou card informativo
 - quality "bad" apenas para fotos claramente inutilizáveis (muito escuras, borradas, irreconhecíveis)
 - quality "acceptable" para fotos medianas que ainda podem ser publicadas
+- description deve ser rica o suficiente para o copywriter criar uma legenda sem ambiguidade — descreva o que vê, não o que imagina
 - Responda apenas o JSON, sem ```json``` ou qualquer outro texto
 """
 
@@ -158,6 +162,9 @@ async def analyze_photo_with_ai(
     result.setdefault("quality_reason", "ok")
     result.setdefault("content_type", "obra_realizada")
     result.setdefault("description", "")
+    result.setdefault("elementos_visuais", "")
+    result.setdefault("ambiente", "externo")
+    result.setdefault("nivel_acabamento", "nao_aplicavel")
     result.setdefault("publish_clean", True)
     result.setdefault("stage", "")
 

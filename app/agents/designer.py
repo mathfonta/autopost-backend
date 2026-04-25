@@ -161,6 +161,60 @@ def _process_antes_depois(img: Image.Image, logo: Image.Image | None) -> Image.I
     return _add_logo(img, logo)
 
 
+# ─── Função auxiliar multi-foto ─────────────────────────────────────────────
+
+async def process_before_after_two_photos(
+    request_id: str,
+    before_url: str,
+    before_key: str,
+    after_url: str,
+    after_key: str,
+    analysis_result: dict,
+    brand_profile: dict,
+) -> dict:
+    """
+    Composita duas fotos (antes/depois) em layout 50/50 e faz upload para R2.
+
+    Returns:
+        dict com: processed_photo_url, type, dimensions, file_size_kb, r2_key
+    """
+    logo = await _get_logo(brand_profile)
+
+    img_before = await _download_image(before_url, before_key)
+    img_after = await _download_image(after_url, after_key)
+
+    b = _resize_square(img_before).resize((540, 1080), Image.LANCZOS)
+    a = _resize_square(img_after).resize((540, 1080), Image.LANCZOS)
+
+    combined = Image.new("RGBA", TARGET_SIZE)
+    combined.paste(b, (0, 0))
+    combined.paste(a, (540, 0))
+
+    draw = ImageDraw.Draw(combined)
+    draw.line([(540, 0), (540, 1080)], fill=(255, 255, 255, 200), width=4)
+    draw.rectangle([(10, 10), (530, 70)], fill=(0, 0, 0, 160))
+    draw.text((20, 20), "ANTES", fill=(255, 255, 255, 255))
+    draw.rectangle([(550, 10), (1070, 70)], fill=(0, 0, 0, 160))
+    draw.text((560, 20), "DEPOIS", fill=(255, 255, 255, 255))
+
+    combined = _add_logo(combined, logo)
+    jpeg_bytes = _to_jpeg(combined)
+    file_size_kb = len(jpeg_bytes) // 1024
+
+    key = f"processed/{request_id}/final.jpg"
+    processed_url = await upload_to_r2(key, jpeg_bytes, "image/jpeg")
+
+    logger.info(f"[designer] before_after concluído size={file_size_kb}KB")
+
+    return {
+        "processed_photo_url": processed_url,
+        "type": "before_after",
+        "dimensions": "1080x1080",
+        "file_size_kb": file_size_kb,
+        "r2_key": key,
+    }
+
+
 # ─── Função principal ────────────────────────────────────────────────────────
 
 async def process_image(

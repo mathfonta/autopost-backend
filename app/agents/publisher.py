@@ -124,6 +124,107 @@ async def publish_to_instagram(
     return {"post_id": post_id, "permalink": permalink}
 
 
+# ─── Instagram Carrossel ─────────────────────────────────────────────────────
+
+async def publish_carousel_to_instagram(
+    instagram_business_id: str,
+    access_token: str,
+    image_urls: list[str],
+    caption: str,
+) -> dict:
+    """
+    Publica carrossel no Instagram Business (N items → carousel container → publish).
+
+    Returns:
+        dict com: post_id, permalink
+    """
+    import asyncio as _asyncio
+
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        # Etapa 1 — cria containers de item
+        item_ids = []
+        for img_url in image_urls:
+            resp = await client.post(
+                f"{GRAPH_BASE}/{instagram_business_id}/media",
+                data={
+                    "image_url": img_url,
+                    "is_carousel_item": "true",
+                    "access_token": access_token,
+                },
+            )
+            data = resp.json()
+            _raise_if_error(data, "ig_create_carousel_item")
+            item_ids.append(data["id"])
+            logger.info(f"[publisher] carousel item criado id={data['id']}")
+
+        # Aguarda todos os items ficarem FINISHED
+        for item_id in item_ids:
+            for _ in range(12):
+                await _asyncio.sleep(5)
+                status_resp = await client.get(
+                    f"{GRAPH_BASE}/{item_id}",
+                    params={"fields": "status_code", "access_token": access_token},
+                )
+                sc = status_resp.json().get("status_code", "")
+                logger.info(f"[publisher] carousel item={item_id} status={sc}")
+                if sc == "FINISHED":
+                    break
+                if sc == "ERROR":
+                    raise RuntimeError(f"Carousel item {item_id} falhou no processamento")
+
+        # Etapa 2 — cria container carousel
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media",
+            data={
+                "media_type": "CAROUSEL",
+                "children": ",".join(item_ids),
+                "caption": caption,
+                "access_token": access_token,
+            },
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_create_carousel_container")
+        carousel_id = data["id"]
+        logger.info(f"[publisher] carousel container criado id={carousel_id}")
+
+        # Aguarda carousel ficar FINISHED
+        for _ in range(12):
+            await _asyncio.sleep(5)
+            status_resp = await client.get(
+                f"{GRAPH_BASE}/{carousel_id}",
+                params={"fields": "status_code", "access_token": access_token},
+            )
+            sc = status_resp.json().get("status_code", "")
+            logger.info(f"[publisher] carousel container status={sc}")
+            if sc == "FINISHED":
+                break
+            if sc == "ERROR":
+                raise RuntimeError(f"Carousel container falhou: {status_resp.json()}")
+
+        # Etapa 3 — publica
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media_publish",
+            data={
+                "creation_id": carousel_id,
+                "access_token": access_token,
+            },
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_publish_carousel")
+        post_id = data["id"]
+
+        # Busca permalink
+        resp = await client.get(
+            f"{GRAPH_BASE}/{post_id}",
+            params={"fields": "permalink", "access_token": access_token},
+        )
+        post_data = resp.json()
+        permalink = post_data.get("permalink", "")
+
+    logger.info(f"[publisher] carrossel publicado post_id={post_id}")
+    return {"post_id": post_id, "permalink": permalink}
+
+
 # ─── Facebook ────────────────────────────────────────────────────────────────
 
 async def publish_to_facebook(

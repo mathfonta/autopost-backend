@@ -35,12 +35,33 @@ _DEFAULT_TIMES = {
     "default":             "19:00",
 }
 
+# Abordagem forçada por tentativa de retry — garante variação real
+_RETRY_APPROACHES = {
+    1: (
+        "ABORDAGEM DESTA TENTATIVA: Foco total no RESULTADO e no benefício para o cliente. "
+        "Não descreva o processo — destaque a transformação entregue e o problema resolvido. "
+        "Seja direto e objetivo."
+    ),
+    2: (
+        "ABORDAGEM DESTA TENTATIVA: Tom EMOCIONAL e aspiracional. "
+        "Foque na conquista, no orgulho do trabalho bem feito, na satisfação do cliente. "
+        "Humanize a empresa — mostre as pessoas por trás do serviço."
+    ),
+    3: (
+        "ABORDAGEM DESTA TENTATIVA: Tom TÉCNICO e especialista. "
+        "Destaque materiais utilizados, técnicas aplicadas e diferenciais de qualidade. "
+        "Escreva como um profissional experiente falando para quem entende do assunto."
+    ),
+}
+
 CONTENT_TYPE_PROMPTS = {
     "post_simples":    "Post direto apresentando o trabalho. Tom: profissional e claro.",
     "obra_andamento":  "Obra em progresso. Tom: transparência e confiança no processo.",
     "obra_concluida":  "Resultado final entregue. Tom: celebração, orgulho e resultado.",
     "engajamento":     "Post para gerar interação. Tom: pergunta direta, convite à participação.",
     "bastidores":      "Momento humano da equipe. Tom: autêntico, próximo, humanizado.",
+    "before_after":    "Antes e depois da transformação. Tom: destaque a mudança, celebre o resultado.",
+    "carousel":        "Série de imagens mostrando o trabalho. Tom: narrativa visual, conte a história.",
 }
 
 _SYSTEM_PROMPT = """\
@@ -74,6 +95,7 @@ async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
     user_content_type: str | None = None,
+    retry_attempt: int = 0,
 ) -> dict:
     """
     Gera legenda, hashtags e CTA para o post usando Claude Sonnet.
@@ -98,10 +120,17 @@ async def generate_copy_with_ai(
     city = brand_profile.get("city", "")
     company = brand_profile.get("company_name", "")
 
-    # Monta informações da foto
-    description = analysis_result.get("description", "Foto do trabalho realizado")
-    content_type = analysis_result.get("content_type", "obra_realizada")
-    stage = analysis_result.get("stage", "")
+    # Monta informações da(s) foto(s) — suporte multi-foto
+    photos = analysis_result.get("photos")
+    if photos:
+        descriptions = [p.get("description", "") for p in photos if p.get("description")]
+        description = f"Sequência de {len(photos)} fotos: " + "; ".join(descriptions) if descriptions else "Série de fotos do trabalho"
+        content_type = analysis_result.get("content_type", "obra_realizada")
+        stage = analysis_result.get("stage", "")
+    else:
+        description = analysis_result.get("description", "Foto do trabalho realizado")
+        content_type = analysis_result.get("content_type", "obra_realizada")
+        stage = analysis_result.get("stage", "")
 
     content_type_labels = {
         "obra_realizada": "foto de obra/serviço realizado",
@@ -126,6 +155,24 @@ async def generate_copy_with_ai(
     if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS:
         intent_section = f"\nINTENÇÃO DO CLIENTE: {CONTENT_TYPE_PROMPTS[user_content_type]}"
 
+    # Injeta abordagem forçada para garantir variação real no retry
+    retry_section = ""
+    if retry_attempt > 0:
+        approach = _RETRY_APPROACHES.get(retry_attempt, _RETRY_APPROACHES[3])
+        retry_section = f"\n\n{approach}"
+
+    # Campos enriquecidos do analista (novos — podem estar ausentes em posts antigos)
+    elementos = analysis_result.get("elementos_visuais", "")
+    ambiente = analysis_result.get("ambiente", "")
+    nivel = analysis_result.get("nivel_acabamento", "")
+    extra_section = ""
+    if elementos or ambiente or nivel:
+        extra_section = (
+            f"\n- Elementos visuais: {elementos or 'não identificados'}"
+            f"\n- Ambiente: {ambiente or 'não identificado'}"
+            f"\n- Nível de acabamento: {nivel or 'não identificado'}"
+        )
+
     user_message = f"""
 Crie uma legenda para este post:
 
@@ -138,10 +185,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{intent_section}{patterns_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,

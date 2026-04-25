@@ -56,12 +56,15 @@ async def _get_request_with_client(request_id: str) -> dict:
             "id": str(req.id),
             "photo_url": req.photo_url,
             "photo_key": req.photo_key,
+            "photo_keys": list(req.photo_keys or [req.photo_key]),
+            "photo_urls": list(req.photo_urls or [req.photo_url]),
             "brand_profile": brand_profile or {},
             "analysis_result": req.analysis_result or {},
             "copy_result": req.copy_result or {},
             "design_result": req.design_result or {},
             "publish_result": req.publish_result or {},
             "content_type": req.content_type,
+            "retry_count": req.retry_count,
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
             "instagram_business_id": (client.instagram_business_id or "") if client else "",
@@ -140,9 +143,22 @@ def analyze_photo(self, request_id: str) -> str:
 
         # Busca foto e brand_profile do cliente
         req = _run_sync(_get_request_with_client(request_id))
-        analysis = _run_sync(
-            analyze_photo_with_ai(req["photo_url"], req["brand_profile"], req.get("photo_key", ""))
-        )
+
+        # Multi-foto: analisa cada foto individualmente e agrega
+        photo_keys = req.get("photo_keys") or [req.get("photo_key", "")]
+        photo_urls = req.get("photo_urls") or [req.get("photo_url", "")]
+
+        if len(photo_keys) > 1:
+            analyses = []
+            for p_key, p_url in zip(photo_keys, photo_urls):
+                a = _run_sync(analyze_photo_with_ai(p_url, req["brand_profile"], p_key))
+                analyses.append(a)
+            bad = next((a for a in analyses if a.get("quality") == "bad"), None)
+            analysis = {**(bad if bad else analyses[0]), "photos": analyses}
+        else:
+            analysis = _run_sync(
+                analyze_photo_with_ai(photo_urls[0], req["brand_profile"], photo_keys[0])
+            )
 
         # Foto ruim → falha com mensagem amigável
         if analysis.get("quality") == "bad":
@@ -238,6 +254,7 @@ def retry_generate_copy(self, request_id: str) -> str:
                 req["analysis_result"],
                 req["brand_profile"],
                 user_content_type=req.get("content_type"),
+                retry_attempt=req.get("retry_count", 1),
             )
         )
 
@@ -248,7 +265,7 @@ def retry_generate_copy(self, request_id: str) -> str:
             result_data=copy,
         ))
 
-        logger.info(f"[retry_generate_copy] concluído request_id={request_id}")
+        logger.info(f"[retry_generate_copy] concluído request_id={request_id} retry_attempt={req.get('retry_count', 1)}")
         return request_id
 
     except Exception as exc:
@@ -274,15 +291,52 @@ def prepare_design(self, request_id: str) -> str:
 
     try:
         req = _run_sync(_get_request_with_client(request_id))
-        design = _run_sync(
-            process_image(
-                request_id,
-                req["photo_url"],
-                req["analysis_result"],
-                req["brand_profile"],
-                req.get("photo_key", ""),
+        photo_keys = req.get("photo_keys") or [req.get("photo_key", "")]
+        photo_urls = req.get("photo_urls") or [req.get("photo_url", "")]
+        content_type = req.get("content_type", "")
+
+        if content_type == "before_after" and len(photo_keys) >= 2:
+            from app.agents.designer import process_before_after_two_photos
+            design = _run_sync(
+                process_before_after_two_photos(
+                    request_id,
+                    photo_urls[0], photo_keys[0],
+                    photo_urls[1], photo_keys[1],
+                    req["analysis_result"],
+                    req["brand_profile"],
+                )
             )
-        )
+        elif content_type == "carousel" and len(photo_keys) > 1:
+            designs = []
+            design_keys = []
+            for i, (p_key, p_url) in enumerate(zip(photo_keys, photo_urls)):
+                d = _run_sync(
+                    process_image(
+                        f"{request_id}/slide_{i}",
+                        p_url,
+                        req["analysis_result"],
+                        req["brand_profile"],
+                        p_key,
+                    )
+                )
+                designs.append(d)
+                design_keys.append(d["r2_key"])
+            design = {
+                "type": "carousel",
+                "designs": designs,
+                "design_keys": design_keys,
+                "r2_key": design_keys[0] if design_keys else "",
+            }
+        else:
+            design = _run_sync(
+                process_image(
+                    request_id,
+                    req["photo_url"],
+                    req["analysis_result"],
+                    req["brand_profile"],
+                    req.get("photo_key", ""),
+                )
+            )
 
         _run_sync(_update_status(
             request_id,
@@ -327,6 +381,7 @@ def publish_post(self, request_id: str) -> str:
     from app.agents.publisher import (
         publish_to_instagram,
         publish_to_facebook,
+        publish_carousel_to_instagram,
         build_full_caption,
         MetaAPIError,
     )
@@ -337,26 +392,42 @@ def publish_post(self, request_id: str) -> str:
         _run_sync(_update_status(request_id, ContentStatus.publishing))
 
         req = _run_sync(_get_request_with_client(request_id))
-
-        # Gera presigned URL pública para o Instagram acessar a imagem do R2
         from app.core.storage import generate_presigned_url
-        r2_key = req["design_result"].get("r2_key") or req.get("photo_key", "")
-        if r2_key:
-            image_url = generate_presigned_url(r2_key, expires_in=3600)
-        else:
-            image_url = req["design_result"].get("processed_photo_url") or req["photo_url"]
-        full_caption = build_full_caption(req["copy_result"])
 
+        full_caption = build_full_caption(req["copy_result"])
         access_token = req["meta_access_token"]
         ig_id = req["instagram_business_id"]
         fb_id = req["facebook_page_id"]
+        content_type = req.get("content_type", "")
+        design_result = req.get("design_result") or {}
 
         instagram_post_id = None
         facebook_post_id = None
         permalink = None
 
-        # ── Instagram ──
-        if ig_id and access_token:
+        # ── Instagram — carrossel ──
+        if content_type == "carousel" and design_result.get("design_keys") and ig_id and access_token:
+            design_keys = design_result["design_keys"]
+            image_urls = [generate_presigned_url(k, expires_in=3600) for k in design_keys]
+            try:
+                ig = _run_sync(publish_carousel_to_instagram(ig_id, access_token, image_urls, full_caption))
+                instagram_post_id = ig["post_id"]
+                permalink = ig["permalink"]
+            except MetaAPIError as exc:
+                if exc.is_token_expired:
+                    error_msg = "Token Meta expirado. Acesse Configurações → Redes Sociais para renovar."
+                    _run_sync(_update_status(request_id, ContentStatus.failed, error=error_msg))
+                    logger.warning(f"[publish_post] token expirado request_id={request_id}")
+                    return request_id
+                raise
+
+        # ── Instagram — foto única (retrocompat + before_after) ──
+        elif ig_id and access_token:
+            r2_key = design_result.get("r2_key") or req.get("photo_key", "")
+            if r2_key:
+                image_url = generate_presigned_url(r2_key, expires_in=3600)
+            else:
+                image_url = design_result.get("processed_photo_url") or req["photo_url"]
             try:
                 ig = _run_sync(publish_to_instagram(ig_id, access_token, image_url, full_caption))
                 instagram_post_id = ig["post_id"]
@@ -369,8 +440,13 @@ def publish_post(self, request_id: str) -> str:
                     return request_id
                 raise
 
-        # ── Facebook (opcional — falha não cancela Instagram) ──
-        if fb_id and access_token:
+        # ── Facebook (opcional — falha não cancela Instagram, apenas foto única) ──
+        if content_type != "carousel" and fb_id and access_token:
+            r2_key = design_result.get("r2_key") or req.get("photo_key", "")
+            if r2_key:
+                image_url = generate_presigned_url(r2_key, expires_in=3600)
+            else:
+                image_url = design_result.get("processed_photo_url") or req["photo_url"]
             try:
                 fb = _run_sync(publish_to_facebook(fb_id, access_token, image_url, full_caption))
                 facebook_post_id = fb["post_id"]
