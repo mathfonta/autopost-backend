@@ -46,6 +46,7 @@ def _fake_request_with_client():
         "brand_profile": {"segment": "construção", "city": "Florianópolis"},
         "analysis_result": {},
         "copy_result": {},
+        "user_context": None,
     }
 
 
@@ -71,7 +72,7 @@ def test_analyze_photo_transitions_to_copy():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         return _fake_ai_analysis()
 
     with (
@@ -99,7 +100,7 @@ def test_analyze_photo_sets_analysis_result():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         return _fake_ai_analysis()
 
     with (
@@ -155,7 +156,7 @@ def test_generate_copy_transitions_to_design():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None):
+    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
         return _fake_ai_copy()
 
     with (
@@ -180,7 +181,7 @@ def test_generate_copy_sets_copy_result():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None):
+    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
         return _fake_ai_copy()
 
     with (
@@ -386,7 +387,7 @@ def test_analyze_photo_multi_photo_analyses_all():
     async def fake_get(request_id):
         return _fake_request_with_client_multi("carousel")
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         analyze_calls.append(photo_url)
         return _fake_ai_analysis()
 
@@ -420,7 +421,7 @@ def test_analyze_photo_multi_photo_bad_first_fails():
     async def fake_get(request_id):
         return _fake_request_with_client_multi("carousel")
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         return {**_fake_ai_analysis(), "quality": "bad", "quality_reason": "dark"}
 
     with (
@@ -445,7 +446,7 @@ def test_analyze_photo_multi_photo_bad_second_fails():
     async def fake_get(request_id):
         return _fake_request_with_client_multi("carousel")
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         call_count[0] += 1
         if call_count[0] == 2:
             return {**_fake_ai_analysis(), "quality": "bad", "quality_reason": "blurry"}
@@ -473,7 +474,7 @@ def test_analyze_photo_single_photo_retrocompat():
     async def fake_get(request_id):
         return _fake_request_with_client()  # sem photo_keys
 
-    async def fake_ai(photo_url, brand_profile, photo_key=""):
+    async def fake_ai(photo_url, brand_profile, photo_key="", user_context=None):
         analyze_calls.append(photo_url)
         return _fake_ai_analysis()
 
@@ -506,7 +507,7 @@ def test_generate_copy_with_multi_photo_analysis():
         }
         return r
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None):
+    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
         copy_inputs.append(analysis_result)
         return _fake_ai_copy()
 
