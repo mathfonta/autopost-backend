@@ -29,7 +29,8 @@ class ContentStatus(str, enum.Enum):
     approved = "approved"             # cliente aprovou
     publishing = "publishing"         # Agente Publicador rodando
     published = "published"           # publicado com sucesso
-    failed = "failed"                 # erro em alguma etapa
+    failed = "failed"                 # erro técnico em alguma etapa
+    rejected = "rejected"             # rejeitado pelo cliente na revisão
 
 
 class ContentRequest(Base, TenantMixin):

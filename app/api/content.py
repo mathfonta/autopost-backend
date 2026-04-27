@@ -377,9 +377,9 @@ async def reject_content_request(
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
     reason = body.reason if body and body.reason else None
-    req.status = ContentStatus.failed
-    req.error_message = f"Rejeitado pelo cliente: {reason}" if reason else "Rejeitado pelo cliente"
+    req.status = ContentStatus.rejected
+    req.error_message = reason or None
     await db.commit()
 
     logger.info(f"[content] rejeitado id={req.id}")
-    return ApproveResponse(id=req.id, status=ContentStatus.failed)
+    return ApproveResponse(id=req.id, status=ContentStatus.rejected)
