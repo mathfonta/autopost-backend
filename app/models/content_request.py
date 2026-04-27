@@ -88,6 +88,12 @@ class ContentRequest(Base, TenantMixin):
         comment="Intenção: post_simples | obra_andamento | obra_concluida | engajamento | bastidores"
     )
 
+    # ─── Contexto livre do usuário ───────────────────────────────
+    user_context: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="Contexto opcional digitado pelo cliente antes do upload (ex: porcelanato, banheiro social)"
+    )
+
     # ─── Edição e retry pelo cliente ────────────────────────────
     caption_edited: Mapped[bool] = mapped_column(
         default=False, nullable=False, server_default="false",

@@ -64,6 +64,7 @@ async def analyze_photo_with_ai(
     photo_url: str,
     brand_profile: dict,
     photo_key: str = "",
+    user_context: str | None = None,
 ) -> dict:
     """
     Analisa uma foto usando Claude Haiku com visão.
@@ -99,7 +100,11 @@ async def analyze_photo_with_ai(
             "Use esses padrões para contextualizar sua análise quando relevante."
         )
 
-    user_message = f"{context}. Analise esta foto para publicação no Instagram.{patterns_context}"
+    context_hint = ""
+    if user_context and user_context.strip():
+        context_hint = f"\n\nO cliente informa sobre esta foto: \"{user_context.strip()}\"\nUse como dado adicional ao que você pode ver na imagem."
+
+    user_message = f"{context}. Analise esta foto para publicação no Instagram.{patterns_context}{context_hint}"
 
     logger.info(
         f"[analyst] chamando Claude Haiku — url={photo_url[:60]}... "

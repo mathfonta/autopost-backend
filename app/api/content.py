@@ -80,6 +80,7 @@ async def submit_photo(
     photo: UploadFile | None = File(None),
     photos: list[UploadFile] | None = File(None),
     content_type: str | None = Form(None),
+    user_context: str | None = Form(None),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
@@ -152,6 +153,7 @@ async def submit_photo(
         source_channel="app",
         status=ContentStatus.pending,
         content_type=content_type,
+        user_context=user_context or None,
     )
     db.add(req)
     await db.commit()

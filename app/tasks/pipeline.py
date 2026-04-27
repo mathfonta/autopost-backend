@@ -64,6 +64,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "design_result": req.design_result or {},
             "publish_result": req.publish_result or {},
             "content_type": req.content_type,
+            "user_context": req.user_context or None,
             "retry_count": req.retry_count,
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
@@ -148,16 +149,17 @@ def analyze_photo(self, request_id: str) -> str:
         photo_keys = req.get("photo_keys") or [req.get("photo_key", "")]
         photo_urls = req.get("photo_urls") or [req.get("photo_url", "")]
 
+        user_context = req.get("user_context")
         if len(photo_keys) > 1:
             analyses = []
             for p_key, p_url in zip(photo_keys, photo_urls):
-                a = _run_sync(analyze_photo_with_ai(p_url, req["brand_profile"], p_key))
+                a = _run_sync(analyze_photo_with_ai(p_url, req["brand_profile"], p_key, user_context=user_context))
                 analyses.append(a)
             bad = next((a for a in analyses if a.get("quality") == "bad"), None)
             analysis = {**(bad if bad else analyses[0]), "photos": analyses}
         else:
             analysis = _run_sync(
-                analyze_photo_with_ai(photo_urls[0], req["brand_profile"], photo_keys[0])
+                analyze_photo_with_ai(photo_urls[0], req["brand_profile"], photo_keys[0], user_context=user_context)
             )
 
         # Foto ruim → falha com mensagem amigável
@@ -215,6 +217,7 @@ def generate_copy(self, request_id: str) -> str:
                 req["analysis_result"],
                 req["brand_profile"],
                 user_content_type=req.get("content_type"),
+                user_context=req.get("user_context"),
             )
         )
 
@@ -254,6 +257,7 @@ def retry_generate_copy(self, request_id: str) -> str:
                 req["analysis_result"],
                 req["brand_profile"],
                 user_content_type=req.get("content_type"),
+                user_context=req.get("user_context"),
                 retry_attempt=req.get("retry_count", 1),
             )
         )

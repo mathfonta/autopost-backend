@@ -95,6 +95,7 @@ async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
     user_content_type: str | None = None,
+    user_context: str | None = None,
     retry_attempt: int = 0,
 ) -> dict:
     """
@@ -155,6 +156,14 @@ async def generate_copy_with_ai(
     if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS:
         intent_section = f"\nINTENÇÃO DO CLIENTE: {CONTENT_TYPE_PROMPTS[user_content_type]}"
 
+    # Injeta contexto do usuário (especificação de material, serviço, produto)
+    user_context_section = ""
+    if user_context and user_context.strip():
+        user_context_section = (
+            f"\n\nCONTEXTO DO CLIENTE (use para enriquecer — não substitui o que você vê na foto):\n"
+            f"{user_context.strip()}"
+        )
+
     # Injeta abordagem forçada para garantir variação real no retry
     retry_section = ""
     if retry_attempt > 0:
@@ -185,10 +194,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} user_context={'sim' if user_context else 'não'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,
