@@ -371,6 +371,43 @@ async def approve_content_request(
     return ApproveResponse(id=req.id, status=ContentStatus.publishing)
 
 
+# ─── DELETE /content-requests/{id} ─────────────────────────────
+
+DELETABLE_STATUSES = {ContentStatus.failed, ContentStatus.rejected}
+
+
+@router.delete("/{request_id}", status_code=204)
+async def delete_content_request(
+    request_id: uuid.UUID,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Remove permanentemente um post com status 'failed' ou 'rejected'.
+    Posts publicados ou em processamento não podem ser excluídos.
+    """
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status not in DELETABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Apenas posts com status 'failed' ou 'rejected' podem ser excluídos. Status atual: {req.status.value}.",
+        )
+
+    await db.delete(req)
+    await db.commit()
+    logger.info(f"[content] excluído id={req.id} status={req.status.value}")
+
+
 # ─── POST /content-requests/{id}/reject ─────────────────────────
 
 @router.post("/{request_id}/reject", response_model=ApproveResponse)
