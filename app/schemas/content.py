@@ -4,9 +4,9 @@ Schemas Pydantic para os endpoints de ContentRequest.
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.content_request import ContentStatus
 
@@ -39,6 +39,10 @@ class ContentRequestDetailResponse(BaseModel):
     retry_count: int = 0
     content_type: str | None = None
     user_context: str | None = None
+    caption_long: str | None = None
+    caption_short: str | None = None
+    caption_stories: str | None = None
+    caption_selected: str | None = "long"
     created_at: datetime
     updated_at: datetime
 
@@ -46,8 +50,16 @@ class ContentRequestDetailResponse(BaseModel):
 
 
 class PatchCaptionRequest(BaseModel):
-    """Body do endpoint PATCH /{id} — atualiza legenda."""
-    caption: str
+    """Body do endpoint PATCH /{id} — atualiza legenda e/ou seleciona variação."""
+    caption: str | None = None
+    caption_selected: Literal["long", "short", "stories"] | None = None
+
+    @field_validator("caption_selected")
+    @classmethod
+    def caption_selected_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("long", "short", "stories"):
+            raise ValueError("caption_selected deve ser 'long', 'short' ou 'stories'")
+        return v
 
 
 class ContentRequestListResponse(BaseModel):

@@ -94,6 +94,21 @@ class ContentRequest(Base, TenantMixin):
         comment="Contexto opcional digitado pelo cliente antes do upload (ex: porcelanato, banheiro social)"
     )
 
+    # ─── Variações de legenda (Story 8.3) ───────────────────────
+    caption_long: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Variação longa (até 400 chars)"
+    )
+    caption_short: Mapped[str | None] = mapped_column(
+        String(150), nullable=True, comment="Variação curta (até 150 chars)"
+    )
+    caption_stories: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Variação Stories (até 100 chars)"
+    )
+    caption_selected: Mapped[str | None] = mapped_column(
+        String(10), nullable=True, server_default="long",
+        comment="Variação escolhida: long | short | stories"
+    )
+
     # ─── Edição e retry pelo cliente ────────────────────────────
     caption_edited: Mapped[bool] = mapped_column(
         default=False, nullable=False, server_default="false",

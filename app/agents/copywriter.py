@@ -20,8 +20,10 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 1024
-MAX_CAPTION_CHARS = 2200
+MAX_TOKENS = 1500
+MAX_CAPTION_LONG_CHARS = 400
+MAX_CAPTION_SHORT_CHARS = 150
+MAX_CAPTION_STORIES_CHARS = 100
 
 # Horários de pico por segmento (fallback se Claude não sugerir)
 _DEFAULT_TIMES = {
@@ -66,25 +68,26 @@ CONTENT_TYPE_PROMPTS = {
 
 _SYSTEM_PROMPT = """\
 Você é um especialista em copywriting para redes sociais de pequenas empresas brasileiras.
-Crie uma legenda para Instagram baseada EXCLUSIVAMENTE nas informações fornecidas.
+Crie 3 variações de legenda para Instagram baseadas EXCLUSIVAMENTE nas informações fornecidas.
 
 REGRAS OBRIGATÓRIAS:
 1. NUNCA invente dados, medidas, valores, prazos ou informações não presentes na descrição
-2. A legenda deve ter no máximo 2200 caracteres
-3. Use o tom de voz e segmento do cliente fornecidos
-4. Inclua emojis relevantes (máximo 5)
-5. Termine com os hashtags fora da legenda principal
+2. Use o tom de voz e segmento do cliente fornecidos
+3. Inclua emojis relevantes (máximo 5 por variação)
+4. As 3 variações devem ter abordagens complementares, não repetir o mesmo texto
 
 Responda EXCLUSIVAMENTE em JSON válido, sem texto fora do JSON:
 {
-  "caption": "<legenda completa, sem hashtags, máximo 2200 chars>",
+  "caption_long": "<legenda completa com storytelling, máximo 400 chars, sem hashtags>",
+  "caption_short": "<versão objetiva e direta, máximo 150 chars, sem hashtags>",
+  "caption_stories": "<texto para Stories, tom conversacional e imediato, máximo 100 chars>",
   "hashtags": ["hashtag1", "hashtag2", ...],
   "cta": "<call-to-action específico, ex: Entre em contato pelo link na bio!>",
   "suggested_time": "<HH:MM — melhor horário para publicar para este segmento>"
 }
 
 Regras das hashtags:
-- Entre 10 e 20 hashtags
+- Entre 10 e 20 hashtags (aplicam-se às 3 variações)
 - Inclua hashtags do nicho (ex: #construcaocivil), da localização (ex: #florianopolis) e gerais (#instagram #brasil)
 - Sem o símbolo # no JSON — apenas a palavra
 - Todas em minúsculo, sem espaços, sem acentos
@@ -233,16 +236,30 @@ FOTO:
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude retornou JSON inválido: {raw[:300]}") from e
 
+    # Backward compat: se Claude retornou formato antigo (só caption)
+    if "caption" in result and "caption_long" not in result:
+        result["caption_long"] = result["caption"]
+        result["caption_short"] = None
+        result["caption_stories"] = None
+
     # Garante campos com defaults
-    result.setdefault("caption", "")
+    result.setdefault("caption_long", "")
+    result.setdefault("caption_short", None)
+    result.setdefault("caption_stories", None)
     result.setdefault("hashtags", [])
     result.setdefault("cta", "Entre em contato pelo link na bio!")
     result.setdefault("suggested_time", _DEFAULT_TIMES.get(segment.lower().strip(), _DEFAULT_TIMES["default"]))
 
-    # Trunca caption se ultrapassar limite do Instagram
-    if len(result["caption"]) > MAX_CAPTION_CHARS:
-        result["caption"] = result["caption"][:MAX_CAPTION_CHARS - 3] + "..."
-        logger.warning("[copywriter] caption truncada para 2200 chars")
+    # Trunca variações nos limites
+    if result["caption_long"] and len(result["caption_long"]) > MAX_CAPTION_LONG_CHARS:
+        result["caption_long"] = result["caption_long"][:MAX_CAPTION_LONG_CHARS - 3] + "..."
+    if result["caption_short"] and len(result["caption_short"]) > MAX_CAPTION_SHORT_CHARS:
+        result["caption_short"] = result["caption_short"][:MAX_CAPTION_SHORT_CHARS - 3] + "..."
+    if result["caption_stories"] and len(result["caption_stories"]) > MAX_CAPTION_STORIES_CHARS:
+        result["caption_stories"] = result["caption_stories"][:MAX_CAPTION_STORIES_CHARS - 3] + "..."
+
+    # caption principal = caption_long (para publicação e retrocompat)
+    result["caption"] = result["caption_long"] or ""
 
     # Normaliza hashtags: remove # se presente, lowercase, sem espaços
     result["hashtags"] = [
@@ -252,7 +269,9 @@ FOTO:
     ]
 
     logger.info(
-        f"[copywriter] caption={len(result['caption'])} chars "
+        f"[copywriter] caption_long={len(result['caption_long'])} chars "
+        f"caption_short={len(result['caption_short'] or '')} chars "
+        f"caption_stories={len(result['caption_stories'] or '')} chars "
         f"hashtags={len(result['hashtags'])} "
         f"time={result['suggested_time']}"
     )

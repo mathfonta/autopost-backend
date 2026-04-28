@@ -74,6 +74,30 @@ async def _get_request_with_client(request_id: str) -> dict:
         }
 
 
+async def _save_caption_variants(
+    request_id: str,
+    caption_long: str | None,
+    caption_short: str | None,
+    caption_stories: str | None,
+) -> None:
+    """Salva as 3 variações de legenda nas colunas dedicadas."""
+    from app.core.database import WorkerSessionLocal
+
+    uid = uuid.UUID(request_id)
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(
+            select(ContentRequest).where(ContentRequest.id == uid)
+        )
+        req = result.scalar_one_or_none()
+        if not req:
+            return
+        req.caption_long = caption_long
+        req.caption_short = caption_short
+        req.caption_stories = caption_stories
+        req.caption_selected = "long"
+        await db.commit()
+
+
 async def _get_request(request_id: str) -> ContentRequest:
     """Busca ContentRequest pelo ID, levanta se não encontrar."""
     from app.core.database import WorkerSessionLocal
@@ -223,6 +247,13 @@ def generate_copy(self, request_id: str) -> str:
             )
         )
 
+        _run_sync(_save_caption_variants(
+            request_id,
+            copy.get("caption_long"),
+            copy.get("caption_short"),
+            copy.get("caption_stories"),
+        ))
+
         _run_sync(_update_status(
             request_id,
             ContentStatus.design,
@@ -264,6 +295,13 @@ def retry_generate_copy(self, request_id: str) -> str:
                 retry_attempt=req.get("retry_count", 1),
             )
         )
+
+        _run_sync(_save_caption_variants(
+            request_id,
+            copy.get("caption_long"),
+            copy.get("caption_short"),
+            copy.get("caption_stories"),
+        ))
 
         _run_sync(_update_status(
             request_id,

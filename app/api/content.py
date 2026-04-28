@@ -260,13 +260,27 @@ async def patch_caption(
         )
 
     copy_result = dict(req.copy_result or {})
-    copy_result["caption"] = body.caption
+
+    if body.caption_selected is not None:
+        req.caption_selected = body.caption_selected
+        variant_map = {
+            "long": req.caption_long,
+            "short": req.caption_short,
+            "stories": req.caption_stories,
+        }
+        selected_text = variant_map.get(body.caption_selected)
+        if selected_text:
+            copy_result["caption"] = selected_text
+
+    if body.caption is not None:
+        copy_result["caption"] = body.caption
+        req.caption_edited = True
+
     req.copy_result = copy_result
-    req.caption_edited = True
     await db.commit()
     await db.refresh(req)
 
-    logger.info(f"[content] legenda editada id={req.id}")
+    logger.info(f"[content] legenda atualizada id={req.id} caption_selected={req.caption_selected}")
     return _freshen_urls(req)
 
 
