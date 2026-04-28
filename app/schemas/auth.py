@@ -3,6 +3,7 @@ Schemas Pydantic para autenticação.
 """
 
 import uuid
+from typing import Literal
 from pydantic import BaseModel, EmailStr, field_validator
 
 
@@ -54,14 +55,7 @@ class UpdatePasswordRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    voice_tone: str | None = None
-
-    @field_validator("voice_tone")
-    @classmethod
-    def voice_tone_valid(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("formal", "casual", "technical"):
-            raise ValueError("voice_tone deve ser 'formal', 'casual' ou 'technical'")
-        return v
+    voice_tone: Literal["formal", "casual", "technical"] | None = None
 
 
 # ─── Responses ───────────────────────────────────────────────

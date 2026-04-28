@@ -166,9 +166,12 @@ async def update_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """Atualiza configurações do perfil (ex: tom de voz)."""
+    updated = False
     if body.voice_tone is not None:
         current_client.voice_tone = body.voice_tone
+        updated = True
 
-    await db.commit()
-    await db.refresh(current_client)
+    if updated:
+        await db.commit()
+        await db.refresh(current_client)
     return current_client

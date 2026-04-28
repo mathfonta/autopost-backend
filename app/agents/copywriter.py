@@ -117,7 +117,7 @@ async def generate_copy_with_ai(
         brand_profile: Perfil de marca do cliente (segment, tone, city, company_name)
 
     Returns:
-        dict com: caption, hashtags, cta, suggested_time
+        dict com: caption (= caption_long), caption_long, caption_short, caption_stories, hashtags, cta, suggested_time
 
     Raises:
         anthropic.APITimeoutError: se Claude não responder em 30s
