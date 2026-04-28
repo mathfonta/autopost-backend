@@ -53,6 +53,17 @@ class UpdatePasswordRequest(BaseModel):
         return v
 
 
+class UpdateProfileRequest(BaseModel):
+    voice_tone: str | None = None
+
+    @field_validator("voice_tone")
+    @classmethod
+    def voice_tone_valid(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("formal", "casual", "technical"):
+            raise ValueError("voice_tone deve ser 'formal', 'casual' ou 'technical'")
+        return v
+
+
 # ─── Responses ───────────────────────────────────────────────
 
 class TokenResponse(BaseModel):
@@ -68,6 +79,7 @@ class ClientResponse(BaseModel):
     name: str
     plan: str
     brand_profile: dict
+    voice_tone: str | None = "casual"
     is_active: bool
 
     model_config = {"from_attributes": True}

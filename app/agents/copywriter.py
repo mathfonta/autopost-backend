@@ -91,11 +91,19 @@ Regras das hashtags:
 """
 
 
+_VOICE_TONE_MAP = {
+    "formal":    "tom formal, profissional e aspiracional",
+    "casual":    "tom descontraído, próximo e direto",
+    "technical": "tom técnico, preciso e informativo",
+}
+
+
 async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
     user_content_type: str | None = None,
     user_context: str | None = None,
+    voice_tone: str | None = None,
     retry_attempt: int = 0,
 ) -> dict:
     """
@@ -156,6 +164,12 @@ async def generate_copy_with_ai(
     if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS:
         intent_section = f"\nINTENÇÃO DO CLIENTE: {CONTENT_TYPE_PROMPTS[user_content_type]}"
 
+    # Injeta tom de voz configurado pelo usuário
+    effective_tone = _VOICE_TONE_MAP.get(voice_tone or "", "") if voice_tone else ""
+    voice_tone_section = ""
+    if effective_tone:
+        voice_tone_section = f"\n#TOM_DE_VOZ: {effective_tone}"
+
     # Injeta contexto do usuário (especificação de material, serviço, produto)
     user_context_section = ""
     if user_context and user_context.strip():
@@ -189,7 +203,7 @@ CLIENTE:
 - Empresa: {company or segment}
 - Segmento: {segment}
 - Tom de voz: {tone}
-- Cidade: {city or "não informada"}
+- Cidade: {city or "não informada"}{voice_tone_section}
 
 FOTO:
 - Tipo: {content_label}
@@ -197,7 +211,7 @@ FOTO:
 - Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} user_context={'sim' if user_context else 'não'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,

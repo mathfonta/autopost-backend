@@ -50,6 +50,11 @@ class Client(Base):
         String(255), nullable=True, comment="Nome da Página do Facebook"
     )
 
+    voice_tone: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, server_default="casual",
+        comment="Tom de voz do copywriter: formal | casual | technical",
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )

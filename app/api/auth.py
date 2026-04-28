@@ -19,6 +19,7 @@ from app.schemas.auth import (
     RefreshRequest,
     ForgotPasswordRequest,
     UpdatePasswordRequest,
+    UpdateProfileRequest,
     TokenResponse,
     ClientResponse,
 )
@@ -153,4 +154,21 @@ async def update_password(body: UpdatePasswordRequest):
 @router.get("/me", response_model=ClientResponse)
 async def me(current_client: Client = Depends(get_current_client)):
     """Retorna dados do client autenticado."""
+    return current_client
+
+
+# ─── Update Profile ───────────────────────────────────────────
+
+@router.patch("/profile", response_model=ClientResponse)
+async def update_profile(
+    body: UpdateProfileRequest,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Atualiza configurações do perfil (ex: tom de voz)."""
+    if body.voice_tone is not None:
+        current_client.voice_tone = body.voice_tone
+
+    await db.commit()
+    await db.refresh(current_client)
     return current_client
