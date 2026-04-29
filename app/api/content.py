@@ -41,8 +41,12 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 PRESIGNED_URL_TTL = 3600  # 1 hora
 
 VALID_CONTENT_TYPES = {
-    "post_simples", "obra_andamento", "obra_concluida",
-    "engajamento", "bastidores", "before_after", "carousel",
+    # Formatos Instagram (v2 — genérico)
+    "feed_photo", "carousel", "reels", "story",
+    # Tipos legados Espectra (retrocompatibilidade)
+    "post_simples", "obra_andamento", "obra_concluida", "engajamento", "bastidores",
+    # Tipos especiais multi-foto
+    "before_after",
 }
 MULTI_PHOTO_TYPES = {"before_after", "carousel"}
 
@@ -80,6 +84,7 @@ async def submit_photo(
     photo: UploadFile | None = File(None),
     photos: list[UploadFile] | None = File(None),
     content_type: str | None = Form(None),
+    strategy: str | None = Form(None),
     user_context: str | None = Form(None),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
@@ -153,6 +158,7 @@ async def submit_photo(
         source_channel="app",
         status=ContentStatus.pending,
         content_type=content_type,
+        strategy=strategy or None,
         user_context=user_context or None,
     )
     db.add(req)

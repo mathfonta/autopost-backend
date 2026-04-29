@@ -85,7 +85,11 @@ class ContentRequest(Base, TenantMixin):
     # ─── Intenção de conteúdo (selecionada pelo cliente antes do upload) ──
     content_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True,
-        comment="Intenção: post_simples | obra_andamento | obra_concluida | engajamento | bastidores"
+        comment="Formato Instagram: feed_photo | carousel | reels | story"
+    )
+    strategy: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="Sub-estratégia: prova_social | antes_depois | hook_choque | enquete | etc."
     )
 
     # ─── Contexto livre do usuário ───────────────────────────────

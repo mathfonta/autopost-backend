@@ -38,6 +38,7 @@ class ContentRequestDetailResponse(BaseModel):
     caption_edited: bool = False
     retry_count: int = 0
     content_type: str | None = None
+    strategy: str | None = None
     user_context: str | None = None
     caption_long: str | None = None
     caption_short: str | None = None
