@@ -36,7 +36,9 @@ router = APIRouter(prefix="/content-requests", tags=["content"])
 
 # ─── Constantes ─────────────────────────────────────────────────
 
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime"}
+ALLOWED_CONTENT_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 PRESIGNED_URL_TTL = 3600  # 1 hora
 
@@ -113,7 +115,12 @@ async def submit_photo(
         raise HTTPException(status_code=422, detail="before_after requer exatamente 2 fotos.")
     if content_type == "carousel" and not (2 <= n <= 10):
         raise HTTPException(status_code=422, detail="carousel requer 2–10 fotos.")
-    if content_type and content_type not in MULTI_PHOTO_TYPES and n != 1:
+    if content_type == "reels":
+        if n != 1 or (effective_photos[0].content_type or "") not in ALLOWED_VIDEO_TYPES:
+            raise HTTPException(status_code=422, detail="reels requer 1 arquivo de vídeo (.mp4 ou .mov).")
+    if content_type == "story" and n != 1:
+        raise HTTPException(status_code=422, detail="story requer exatamente 1 arquivo.")
+    if content_type and content_type not in MULTI_PHOTO_TYPES and content_type not in {"reels", "story"} and n != 1:
         raise HTTPException(status_code=422, detail="Tipos simples aceitam apenas 1 foto.")
     if n > 10:
         raise HTTPException(status_code=422, detail="Máximo de 10 fotos por upload.")
@@ -127,7 +134,7 @@ async def submit_photo(
         if photo_content_type not in ALLOWED_CONTENT_TYPES:
             raise HTTPException(
                 status_code=422,
-                detail=f"Foto {i + 1}: formato inválido ({photo_content_type}). Use JPEG, PNG ou WEBP.",
+                detail=f"Foto {i + 1}: formato inválido ({photo_content_type}). Use JPEG, PNG, WEBP, MP4 ou MOV.",
             )
 
         data = await upload.read()
@@ -137,7 +144,8 @@ async def submit_photo(
                 detail=f"Foto {i + 1}: arquivo muito grande ({len(data) // (1024 * 1024)}MB). Máximo: 20MB.",
             )
 
-        key = f"uploads/{current_client.id}/{uuid.uuid4()}.jpg"
+        ext = ".mp4" if photo_content_type in ALLOWED_VIDEO_TYPES else ".jpg"
+        key = f"uploads/{current_client.id}/{uuid.uuid4()}{ext}"
         try:
             url = await upload_to_r2(key, data, photo_content_type)
         except Exception as exc:

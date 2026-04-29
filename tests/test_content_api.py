@@ -200,6 +200,195 @@ def test_submit_photo_triggers_pipeline():
     assert len(pipeline_calls) == 1
 
 
+# ─── Story 9.3: video MIME types (AC8 + AC9) ────────────────────
+
+
+def test_submit_reels_video_mp4_accepted():
+    """Reels com video/mp4 deve retornar 201 (AC8)."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "reels"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/video.mp4"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-reels"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "reels"},
+            files={"photo": ("clip.mp4", b"\x00\x00\x00", "video/mp4")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_submit_reels_video_quicktime_accepted():
+    """Reels com video/quicktime deve retornar 201 (AC8)."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "reels"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/video.mp4"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-reels-mov"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "reels"},
+            files={"photo": ("clip.mov", b"\x00\x00\x00", "video/quicktime")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_submit_reels_image_rejected():
+    """Reels com image/jpeg deve retornar 422 (AC8 — reels requer vídeo)."""
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = lambda: _make_db_with_request()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "reels"},
+            files={"photo": ("photo.jpg", FAKE_PHOTO_BYTES, "image/jpeg")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "vídeo" in response.json()["detail"]
+
+
+def test_submit_story_image_accepted():
+    """Story com image/jpeg deve retornar 201 (AC5 — story aceita imagem)."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "story"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/story.jpg"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-story-img"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "story"},
+            files={"photo": ("story.jpg", FAKE_PHOTO_BYTES, "image/jpeg")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_submit_story_video_accepted():
+    """Story com video/mp4 deve retornar 201 (AC5 + AC8)."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "story"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", new_callable=AsyncMock, return_value="https://r2.example.com/story.mp4"),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-story-vid"),
+    ):
+        response = client.post(
+            "/content-requests",
+            data={"content_type": "story"},
+            files={"photo": ("story.mp4", b"\x00\x00\x00", "video/mp4")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+
+
+def test_r2_key_uses_mp4_extension_for_video():
+    """Vídeo deve ser armazenado com extensão .mp4 na chave R2 (AC9)."""
+    fake_req = _fake_content_request()
+    fake_req.content_type = "reels"
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    r2_mock = AsyncMock(return_value="https://r2.example.com/video.mp4")
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", r2_mock),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-key-ext"),
+    ):
+        client.post(
+            "/content-requests",
+            data={"content_type": "reels"},
+            files={"photo": ("clip.mp4", b"\x00\x00\x00", "video/mp4")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert r2_mock.called
+    key_arg = r2_mock.call_args.args[0]
+    assert key_arg.endswith(".mp4"), f"Esperava chave .mp4, obteve: {key_arg}"
+
+
+def test_r2_key_uses_jpg_extension_for_image():
+    """Imagem deve ser armazenada com extensão .jpg na chave R2 (regressão AC9)."""
+    fake_req = _fake_content_request()
+
+    async def _db_override():
+        yield _make_db_with_request(fake_req)
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    r2_mock = AsyncMock(return_value="https://r2.example.com/photo.jpg")
+
+    with (
+        TestClient(app) as client,
+        patch("app.api.content.upload_to_r2", r2_mock),
+        patch("app.tasks.pipeline.start_content_pipeline", return_value="task-key-jpg"),
+    ):
+        client.post(
+            "/content-requests",
+            files={"photo": ("photo.jpg", FAKE_PHOTO_BYTES, "image/jpeg")},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert r2_mock.called
+    key_arg = r2_mock.call_args.args[0]
+    assert key_arg.endswith(".jpg"), f"Esperava chave .jpg, obteve: {key_arg}"
+
+
 # ─── GET /content-requests/{id} ─────────────────────────────────
 
 
