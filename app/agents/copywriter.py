@@ -66,6 +66,157 @@ CONTENT_TYPE_PROMPTS = {
     "carousel":        "Série de imagens mostrando o trabalho. Tom: narrativa visual, conte a história.",
 }
 
+# Skill Library — 23 instruções de prompt por combinação formato+estratégia (Story 9.2)
+STRATEGY_PROMPTS: dict[str, str] = {
+    # ── Feed Photo (5) ──────────────────────────────────────────────
+    "feed_photo__prova_social": (
+        "ESTRATÉGIA: Prova Social Visual. "
+        "Hook: 1 linha curta e direta com o resultado (ex: 'Entregue. ✓'). "
+        "Corpo: 2-3 linhas contextualizando o trabalho realizado sem exagerar. "
+        "CTA suave de contato ou orçamento. Emojis: máximo 2, funcionais."
+    ),
+    "feed_photo__ancora_de_marca": (
+        "ESTRATÉGIA: Âncora de Marca. "
+        "Hook: frase que reforça a identidade ou posicionamento da empresa. "
+        "Corpo: 1-2 linhas sobre o que a marca representa ou entrega de diferente. "
+        "CTA de reconhecimento — convide a seguir ou a conhecer mais. Emojis: 1-2."
+    ),
+    "feed_photo__curiosidade_pergunta": (
+        "ESTRATÉGIA: Curiosidade + Pergunta. "
+        "Hook: pergunta ou dado surpreendente do nicho que gera reflexão. "
+        "Corpo: contexto rápido sobre o assunto. "
+        "Encerre com outra pergunta convidando comentário. Tom: conversacional. Emojis: 2-3."
+    ),
+    "feed_photo__bastidores": (
+        "ESTRATÉGIA: Bastidores. "
+        "Hook: 'Por trás de...' ou 'O que ninguém vê antes de...'. "
+        "Corpo: descreva o processo, a equipe ou o esforço por trás do trabalho. "
+        "Tom: autêntico e humanizado. CTA: convide a acompanhar o processo. Emojis: 2-3."
+    ),
+    "feed_photo__hero_shot": (
+        "ESTRATÉGIA: Hero Shot — destaque do produto ou serviço. "
+        "Hook: nome do produto/serviço + adjetivo de impacto. "
+        "Corpo: 1-2 benefícios concretos. CTA direto para orçamento ou compra. "
+        "Tom: confiante e orientado à conversão. Emojis: 1-2."
+    ),
+
+    # ── Carousel (6) ────────────────────────────────────────────────
+    "carousel__antes_depois": (
+        "ESTRATÉGIA: Antes & Depois. "
+        "Hook provocativo que destaca o contraste da transformação. "
+        "Corpo: narrativa de transformação — mencione o problema inicial e o resultado final. "
+        "CTA final: convide para conhecer o processo ou solicitar orçamento. "
+        "Tom: storytelling emocional no início, técnico no meio, celebrativo no fim."
+    ),
+    "carousel__passo_a_passo": (
+        "ESTRATÉGIA: Passo a Passo Educativo. "
+        "Hook: promessa do que o leitor vai aprender (ex: 'X passos para...'). "
+        "Corpo: introdução clara à sequência de slides. "
+        "CTA: 'Salva esse post' ou 'Compartilha com quem precisa'. Tom: didático e acessível."
+    ),
+    "carousel__erros_mitos": (
+        "ESTRATÉGIA: Erros / Mitos. "
+        "Hook provocativo: 'X erros que...' ou 'Pare de acreditar que...'. "
+        "Corpo: contexto do problema que o carrossel vai resolver. "
+        "CTA: 'Desliza para não errar mais'. Tom: corretivo mas empático, nunca arrogante."
+    ),
+    "carousel__case_estudo": (
+        "ESTRATÉGIA: Case / Estudo de Caso. "
+        "Hook: apresente o cliente e o desafio inicial. "
+        "Corpo: estrutura problema → solução → resultado com dados quando disponíveis. "
+        "CTA: 'Quer o mesmo resultado? Me chama no DM'. Tom: técnico e confiável."
+    ),
+    "carousel__comparativo": (
+        "ESTRATÉGIA: Comparativo. "
+        "Hook: pergunta de escolha que engaja ('Qual você prefere?'). "
+        "Corpo: introdução neutra ao comparativo dos slides. "
+        "CTA: 'Desliza e decide' ou 'Comenta qual você escolheria'. Tom: neutro e informativo."
+    ),
+    "carousel__checklist": (
+        "ESTRATÉGIA: Checklist / Guia de Referência. "
+        "Hook: promessa de utilidade prática ('Salva antes de fechar'). "
+        "Corpo: introdução à lista com o tema central. "
+        "CTA obrigatório: 'Salva esse post — você vai querer rever'. Tom: utilitário e direto."
+    ),
+
+    # ── Reels (6) ───────────────────────────────────────────────────
+    "reels__hook_choque": (
+        "ESTRATÉGIA: Hook de Choque. "
+        "LEGENDA (não o roteiro): deve complementar o vídeo, não repeti-lo. "
+        "Hook da legenda: frase curta e provocativa (máx 10 palavras). "
+        "Corpo: contexto mínimo do que o vídeo mostra. "
+        "CTA: 'Segue para mais' ou pergunta aberta. Emojis: máximo 2 na legenda."
+    ),
+    "reels__timelapse": (
+        "ESTRATÉGIA: Timelapse / Transformação Visual. "
+        "LEGENDA: o vídeo fala por si — a legenda é enxuta e descritiva. "
+        "Hook: dado concreto ('De 0 a entregue em X dias'). "
+        "Corpo: 1 linha de contexto. CTA: convite para orçamento ou DM. Emojis: 1-2."
+    ),
+    "reels__tutorial_pov": (
+        "ESTRATÉGIA: Tutorial POV. "
+        "LEGENDA: configure o POV com 1 frase ('POV: você...'). "
+        "Corpo: 1-2 linhas do que o vídeo demonstra. "
+        "CTA: 'Comenta se quiser ver mais' ou 'DM aberto'. Tom: demonstrativo e próximo."
+    ),
+    "reels__trend_nicho": (
+        "ESTRATÉGIA: Trend + Nicho. "
+        "LEGENDA: tom leve e atual, adaptado à tendência usada no vídeo. "
+        "Hook: adapte a frase do trend ao nicho de forma criativa. "
+        "CTA: 'Salva' ou 'Marca alguém que precisa ver isso'. Emojis: 3-4, mais descontraídos."
+    ),
+    "reels__bastidores_autenticos": (
+        "ESTRATÉGIA: Bastidores Autênticos. "
+        "LEGENDA: confessional e honesta — 'Ninguém mostra isso. Mas eu vou mostrar.' "
+        "Corpo: 2 linhas sobre o que o vídeo revela do processo real. "
+        "CTA: 'Segue para acompanhar'. Tom: vulnerável no início, confiante no fim."
+    ),
+    "reels__depoimento_video": (
+        "ESTRATÉGIA: Depoimento em Vídeo. "
+        "LEGENDA: inicie com uma citação real ou paráfrase do cliente (entre aspas). "
+        "Corpo: contexto breve do resultado que motivou o depoimento. "
+        "CTA: 'Quer o mesmo? Link na bio'. Tom: prova social, genuíno."
+    ),
+
+    # ── Story (6) ───────────────────────────────────────────────────
+    "story__bastidores_dia": (
+        "ESTRATÉGIA: Bastidores do Dia. "
+        "Texto curto e informal para sobrepor na imagem — máx 10 palavras. "
+        "Tom: conversacional e imediato, como se estivesse falando com um amigo. "
+        "Sem hashtags em Stories. CTA: sticker de resposta ou pergunta rápida."
+    ),
+    "story__enquete": (
+        "ESTRATÉGIA: Enquete. "
+        "Escreva 1 pergunta direta + 2 opções simples para o sticker de enquete. "
+        "Tom: descontraído. Sem hashtags. Texto principal: máx 8 palavras. "
+        "Formato de entrega: inclua 'OPÇÃO A: ...' e 'OPÇÃO B: ...' no copy."
+    ),
+    "story__cta_link": (
+        "ESTRATÉGIA: CTA + Link. "
+        "Contexto em 1 frase + benefício direto + instrução clara para o link. "
+        "Tom: urgente e sem rodeios. Máx 15 palavras no texto principal. "
+        "Use seta ou dedo apontando no copy (ex: '👇 Clica aqui'). Sem hashtags."
+    ),
+    "story__countdown": (
+        "ESTRATÉGIA: Countdown / Urgência. "
+        "Título de urgência em destaque + contexto da oferta ou prazo. "
+        "Tom: escassez genuína — não exagere. Máx 12 palavras. "
+        "Inclua instrução para o sticker de countdown. Sem hashtags."
+    ),
+    "story__caixa_perguntas": (
+        "ESTRATÉGIA: Caixa de Perguntas. "
+        "Convite aberto e acolhedor para perguntas sobre o tema da imagem. "
+        "Ex: 'Me manda sua dúvida sobre [tema] — respondo aqui'. Máx 15 palavras. "
+        "Tom: especialista acessível. Sem hashtags."
+    ),
+    "story__repost_feed": (
+        "ESTRATÉGIA: Repost do Feed. "
+        "Complemento casual ao post que está sendo re-compartilhado. "
+        "Ex: 'Você viu esse post?' ou 'Acabei de postar — não deixa de ver'. "
+        "Tom: conversa direta. Máx 10 palavras. Sem hashtags."
+    ),
+}
+
 _SYSTEM_PROMPT = """\
 Você é um especialista em copywriting para redes sociais de pequenas empresas brasileiras.
 Crie 3 variações de legenda para Instagram baseadas EXCLUSIVAMENTE nas informações fornecidas.
@@ -105,6 +256,7 @@ async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
     user_content_type: str | None = None,
+    strategy: str | None = None,
     user_context: str | None = None,
     voice_tone: str | None = None,
     retry_attempt: int = 0,
@@ -162,9 +314,17 @@ async def generate_copy_with_ai(
             "Use o horário e CTA sugeridos pelos padrões como referência prioritária."
         )
 
-    # Injeta intenção do cliente se fornecida
+    # Injeta sub-estratégia da Skill Library (Story 9.2) — tem precedência sobre content_type legado
+    strategy_section = ""
+    if strategy and user_content_type:
+        skill_key = f"{user_content_type}__{strategy}"
+        skill_instruction = STRATEGY_PROMPTS.get(skill_key, "")
+        if skill_instruction:
+            strategy_section = f"\n\n{skill_instruction}"
+
+    # Injeta intenção do cliente se fornecida (fallback legado quando sem strategy)
     intent_section = ""
-    if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS:
+    if user_content_type and user_content_type in CONTENT_TYPE_PROMPTS and not strategy_section:
         intent_section = f"\nINTENÇÃO DO CLIENTE: {CONTENT_TYPE_PROMPTS[user_content_type]}"
 
     # Injeta tom de voz configurado pelo usuário
@@ -211,10 +371,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,

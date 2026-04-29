@@ -205,6 +205,7 @@ def test_me_authenticated():
     fake_client.plan = "starter"
     fake_client.brand_profile = {}
     fake_client.is_active = True
+    fake_client.voice_tone = "casual"
 
     async def _override_auth():
         return fake_client

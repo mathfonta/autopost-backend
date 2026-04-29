@@ -64,6 +64,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "design_result": req.design_result or {},
             "publish_result": req.publish_result or {},
             "content_type": req.content_type,
+            "strategy": req.strategy,
             "user_context": req.user_context or None,
             "voice_tone": (client.voice_tone or "casual") if client else "casual",
             "retry_count": req.retry_count,
@@ -242,6 +243,7 @@ def generate_copy(self, request_id: str) -> str:
                 req["analysis_result"],
                 req["brand_profile"],
                 user_content_type=req.get("content_type"),
+                strategy=req.get("strategy"),
                 user_context=req.get("user_context"),
                 voice_tone=req.get("voice_tone", "casual"),
             )
@@ -290,6 +292,7 @@ def retry_generate_copy(self, request_id: str) -> str:
                 req["analysis_result"],
                 req["brand_profile"],
                 user_content_type=req.get("content_type"),
+                strategy=req.get("strategy"),
                 user_context=req.get("user_context"),
                 voice_tone=req.get("voice_tone", "casual"),
                 retry_attempt=req.get("retry_count", 1),

@@ -49,7 +49,12 @@ def _fake_content_request(status=ContentStatus.pending, client_id=None, retry_co
     req.caption_edited = False
     req.retry_count = retry_count
     req.content_type = None
+    req.strategy = None
     req.user_context = None
+    req.caption_long = None
+    req.caption_short = None
+    req.caption_stories = None
+    req.caption_selected = "long"
     req.created_at = datetime.now(timezone.utc)
     req.updated_at = datetime.now(timezone.utc)
     return req

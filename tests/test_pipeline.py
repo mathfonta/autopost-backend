@@ -156,12 +156,13 @@ def test_generate_copy_transitions_to_design():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
+    async def fake_ai(analysis_result, brand_profile, **kwargs):
         return _fake_ai_copy()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.tasks.pipeline._save_caption_variants", new_callable=AsyncMock),
         patch("app.agents.copywriter.generate_copy_with_ai", side_effect=fake_ai),
     ):
         result = generate_copy.run(rid)
@@ -181,12 +182,13 @@ def test_generate_copy_sets_copy_result():
     async def fake_get_with_client(request_id):
         return _fake_request_with_client()
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
+    async def fake_ai(analysis_result, brand_profile, **kwargs):
         return _fake_ai_copy()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.tasks.pipeline._save_caption_variants", new_callable=AsyncMock),
         patch("app.agents.copywriter.generate_copy_with_ai", side_effect=fake_ai),
     ):
         generate_copy.run(rid)
@@ -507,13 +509,14 @@ def test_generate_copy_with_multi_photo_analysis():
         }
         return r
 
-    async def fake_ai(analysis_result, brand_profile, user_content_type=None, user_context=None):
+    async def fake_ai(analysis_result, brand_profile, **kwargs):
         copy_inputs.append(analysis_result)
         return _fake_ai_copy()
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get),
+        patch("app.tasks.pipeline._save_caption_variants", new_callable=AsyncMock),
         patch("app.agents.copywriter.generate_copy_with_ai", side_effect=fake_ai),
     ):
         result = generate_copy.run(rid)

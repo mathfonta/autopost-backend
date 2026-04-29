@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agents.copywriter import generate_copy_with_ai, MAX_CAPTION_CHARS, CONTENT_TYPE_PROMPTS
+from app.agents.copywriter import generate_copy_with_ai, MAX_CAPTION_LONG_CHARS as MAX_CAPTION_CHARS, CONTENT_TYPE_PROMPTS
 
 
 # ─── Helpers ────────────────────────────────────────────────────
