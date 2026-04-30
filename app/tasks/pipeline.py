@@ -170,6 +170,29 @@ def analyze_photo(self, request_id: str) -> str:
 
         # Busca foto e brand_profile do cliente
         req = _run_sync(_get_request_with_client(request_id))
+        content_type = req.get("content_type", "")
+
+        # Vídeos não podem ser analisados com visão — pula para copy com análise mínima
+        if content_type in ("reels", "story"):
+            analysis = {
+                "quality": "good",
+                "quality_reason": "ok",
+                "content_type": content_type,
+                "description": "Vídeo enviado pelo usuário para publicação.",
+                "elementos_visuais": "",
+                "ambiente": "nao_aplicavel",
+                "nivel_acabamento": "nao_aplicavel",
+                "publish_clean": True,
+                "stage": "",
+            }
+            _run_sync(_update_status(
+                request_id,
+                ContentStatus.copy,
+                result_field="analysis_result",
+                result_data=analysis,
+            ))
+            logger.info(f"[analyze_photo] vídeo — análise ignorada request_id={request_id}")
+            return request_id
 
         # Multi-foto: analisa cada foto individualmente e agrega
         photo_keys = req.get("photo_keys") or [req.get("photo_key", "")]
