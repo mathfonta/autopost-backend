@@ -470,6 +470,8 @@ def publish_post(self, request_id: str) -> str:
         publish_to_instagram,
         publish_to_facebook,
         publish_carousel_to_instagram,
+        publish_reel_to_instagram,
+        publish_story_to_instagram,
         build_full_caption,
         MetaAPIError,
     )
@@ -493,8 +495,44 @@ def publish_post(self, request_id: str) -> str:
         facebook_post_id = None
         permalink = None
 
+        # ── Instagram — Reels ──
+        if content_type == "reels" and ig_id and access_token:
+            r2_key = design_result.get("r2_key") or req.get("photo_key", "")
+            video_url = generate_presigned_url(r2_key, expires_in=7200) if r2_key else design_result.get("video_url", "")
+            try:
+                ig = _run_sync(publish_reel_to_instagram(ig_id, access_token, video_url, full_caption))
+                instagram_post_id = ig["post_id"]
+                permalink = ig["permalink"]
+            except MetaAPIError as exc:
+                if exc.is_token_expired:
+                    error_msg = "Token Meta expirado. Acesse Configurações → Redes Sociais para renovar."
+                    _run_sync(_update_status(request_id, ContentStatus.failed, error=error_msg))
+                    logger.warning(f"[publish_post] token expirado request_id={request_id}")
+                    return request_id
+                raise
+
+        # ── Instagram — Story ──
+        elif content_type == "story" and ig_id and access_token:
+            r2_key = design_result.get("r2_key") or req.get("photo_key", "")
+            is_video = r2_key.lower().endswith((".mp4", ".mov")) if r2_key else False
+            if r2_key:
+                media_url = generate_presigned_url(r2_key, expires_in=7200)
+            else:
+                media_url = design_result.get("video_url") or req.get("photo_url", "")
+            try:
+                ig = _run_sync(publish_story_to_instagram(ig_id, access_token, media_url, is_video=is_video))
+                instagram_post_id = ig["post_id"]
+                permalink = ig["permalink"]
+            except MetaAPIError as exc:
+                if exc.is_token_expired:
+                    error_msg = "Token Meta expirado. Acesse Configurações → Redes Sociais para renovar."
+                    _run_sync(_update_status(request_id, ContentStatus.failed, error=error_msg))
+                    logger.warning(f"[publish_post] token expirado request_id={request_id}")
+                    return request_id
+                raise
+
         # ── Instagram — carrossel ──
-        if content_type == "carousel" and design_result.get("design_keys") and ig_id and access_token:
+        elif content_type == "carousel" and design_result.get("design_keys") and ig_id and access_token:
             design_keys = design_result["design_keys"]
             image_urls = [generate_presigned_url(k, expires_in=3600) for k in design_keys]
             try:
@@ -528,8 +566,8 @@ def publish_post(self, request_id: str) -> str:
                     return request_id
                 raise
 
-        # ── Facebook (opcional — falha não cancela Instagram, apenas foto única) ──
-        if content_type != "carousel" and fb_id and access_token:
+        # ── Facebook (opcional — apenas imagens; vídeo/carrossel/story não suportados) ──
+        if content_type not in ("carousel", "reels", "story") and fb_id and access_token:
             r2_key = design_result.get("r2_key") or req.get("photo_key", "")
             if r2_key:
                 image_url = generate_presigned_url(r2_key, expires_in=3600)

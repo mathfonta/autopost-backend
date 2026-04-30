@@ -225,6 +225,158 @@ async def publish_carousel_to_instagram(
     return {"post_id": post_id, "permalink": permalink}
 
 
+# ─── Instagram Reels ─────────────────────────────────────────────────────────
+
+async def publish_reel_to_instagram(
+    instagram_business_id: str,
+    access_token: str,
+    video_url: str,
+    caption: str,
+) -> dict:
+    """
+    Publica Reel no Instagram Business (media_type=REELS, async upload).
+
+    O processamento de vídeo na Meta pode levar até 5 minutos.
+    Faz polling de até 30 × 10s antes de considerar falha.
+
+    Returns:
+        dict com: post_id, permalink
+    """
+    import asyncio as _asyncio
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        # Etapa 1 — cria container de Reel
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media",
+            data={
+                "media_type": "REELS",
+                "video_url": video_url,
+                "caption": caption,
+                "share_to_feed": "true",
+                "access_token": access_token,
+            },
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_create_reel_container")
+        creation_id = data["id"]
+        logger.info(f"[publisher] reel container criado creation_id={creation_id}")
+
+        # Etapa 2 — aguarda processamento (vídeo é mais lento que imagem)
+        for attempt in range(30):
+            await _asyncio.sleep(10)
+            status_resp = await client.get(
+                f"{GRAPH_BASE}/{creation_id}",
+                params={"fields": "status_code,status", "access_token": access_token},
+            )
+            status_data = status_resp.json()
+            status_code = status_data.get("status_code", "")
+            logger.info(f"[publisher] reel status={status_code} attempt={attempt + 1}/30")
+            if status_code == "FINISHED":
+                break
+            if status_code == "ERROR":
+                raise RuntimeError(f"Reel falhou no processamento: {status_data.get('status', 'erro desconhecido')}")
+        else:
+            raise RuntimeError("Timeout: vídeo não processado pela Meta em 5 minutos")
+
+        # Etapa 3 — publica
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media_publish",
+            data={
+                "creation_id": creation_id,
+                "access_token": access_token,
+            },
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_publish_reel")
+        post_id = data["id"]
+
+        # Busca permalink
+        resp = await client.get(
+            f"{GRAPH_BASE}/{post_id}",
+            params={"fields": "permalink", "access_token": access_token},
+        )
+        permalink = resp.json().get("permalink", "")
+
+    logger.info(f"[publisher] Reel publicado post_id={post_id}")
+    return {"post_id": post_id, "permalink": permalink}
+
+
+# ─── Instagram Story ──────────────────────────────────────────────────────────
+
+async def publish_story_to_instagram(
+    instagram_business_id: str,
+    access_token: str,
+    media_url: str,
+    is_video: bool = False,
+) -> dict:
+    """
+    Publica Story no Instagram Business.
+
+    Stories não aceitam caption — a legenda é ignorada pela Meta API.
+    Para vídeo: media_type=VIDEO; para imagem: media_type=IMAGE.
+
+    Returns:
+        dict com: post_id (permalink não disponível para Stories)
+    """
+    import asyncio as _asyncio
+
+    media_type = "VIDEO" if is_video else "IMAGE"
+    poll_retries = 30 if is_video else 12
+    poll_interval = 10 if is_video else 5
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        # Etapa 1 — cria container de Story
+        payload: dict = {
+            "media_type": media_type,
+            "access_token": access_token,
+        }
+        if is_video:
+            payload["video_url"] = media_url
+        else:
+            payload["image_url"] = media_url
+
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media",
+            data=payload,
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_create_story_container")
+        creation_id = data["id"]
+        logger.info(f"[publisher] story container criado creation_id={creation_id} is_video={is_video}")
+
+        # Etapa 2 — aguarda processamento
+        for attempt in range(poll_retries):
+            await _asyncio.sleep(poll_interval)
+            status_resp = await client.get(
+                f"{GRAPH_BASE}/{creation_id}",
+                params={"fields": "status_code,status", "access_token": access_token},
+            )
+            status_data = status_resp.json()
+            status_code = status_data.get("status_code", "")
+            logger.info(f"[publisher] story status={status_code} attempt={attempt + 1}/{poll_retries}")
+            if status_code == "FINISHED":
+                break
+            if status_code == "ERROR":
+                raise RuntimeError(f"Story falhou no processamento: {status_data.get('status', 'erro desconhecido')}")
+        else:
+            raise RuntimeError("Timeout: Story não processada pela Meta")
+
+        # Etapa 3 — publica
+        resp = await client.post(
+            f"{GRAPH_BASE}/{instagram_business_id}/media_publish",
+            data={
+                "creation_id": creation_id,
+                "access_token": access_token,
+            },
+        )
+        data = resp.json()
+        _raise_if_error(data, "ig_publish_story")
+        post_id = data["id"]
+
+    logger.info(f"[publisher] Story publicada post_id={post_id}")
+    return {"post_id": post_id, "permalink": ""}
+
+
 # ─── Facebook ────────────────────────────────────────────────────────────────
 
 async def publish_to_facebook(
