@@ -343,6 +343,23 @@ def prepare_design(self, request_id: str) -> str:
         photo_urls = req.get("photo_urls") or [req.get("photo_url", "")]
         content_type = req.get("content_type", "")
 
+        # Vídeos não passam pelo Pillow — vão direto para aprovação
+        if content_type in ("reels", "story"):
+            r2_key = photo_keys[0] if photo_keys else ""
+            design = {
+                "type": "video",
+                "r2_key": r2_key,
+                "video_url": photo_urls[0] if photo_urls else "",
+            }
+            _run_sync(_update_status(
+                request_id,
+                ContentStatus.awaiting_approval,
+                result_field="design_result",
+                result_data=design,
+            ))
+            logger.info(f"[prepare_design] vídeo — pulou Pillow request_id={request_id}")
+            return request_id
+
         if content_type == "before_after" and len(photo_keys) >= 2:
             from app.agents.designer import process_before_after_two_photos
             design = _run_sync(
