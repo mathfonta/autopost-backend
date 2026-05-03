@@ -270,17 +270,11 @@ def _extract_video_frames_sync(video_bytes: bytes, n_frames: int = 3) -> list[by
         return frames
 
 
-def _transcribe_video_audio_sync(video_bytes: bytes) -> str | None:
+def _extract_video_audio_sync(video_bytes: bytes) -> bytes | None:
     """
-    Extrai áudio do vídeo e transcreve via OpenAI Whisper API.
-    Retorna texto transcrito ou None se falhar (sem chave, vídeo mudo, timeout).
+    Extrai áudio do vídeo como MP3 usando FFmpeg.
+    Retorna bytes do áudio ou None se o vídeo não tiver áudio / FFmpeg falhar.
     """
-    try:
-        from openai import OpenAI
-        client = OpenAI()  # usa OPENAI_API_KEY do ambiente
-    except Exception:
-        return None
-
     with tempfile.TemporaryDirectory() as tmpdir:
         video_path = os.path.join(tmpdir, "input.mp4")
         audio_path = os.path.join(tmpdir, "audio.mp3")
@@ -301,20 +295,10 @@ def _transcribe_video_audio_sync(video_bytes: bytes) -> str | None:
             return None
 
         if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-            return None  # vídeo provavelmente sem áudio
+            return None  # vídeo provavelmente mudo
 
-        try:
-            with open(audio_path, "rb") as f:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=f,
-                    language="pt",
-                )
-            text = (transcript.text or "").strip()
-            return text if text else None
-        except Exception as e:
-            logger.warning(f"[analyst-video] Whisper falhou: {e}")
-            return None
+        with open(audio_path, "rb") as f:
+            return f.read()
 
 
 async def analyze_video_with_ai(
@@ -367,15 +351,21 @@ async def analyze_video_with_ai(
         logger.warning(f"[analyst-video] falha ao baixar vídeo: {e}")
         return _minimal_video_analysis(content_type)
 
-    # Extrai frames e transcreve áudio em paralelo
-    frames, transcription = await asyncio.gather(
+    # Extrai frames e áudio em paralelo (ambas operações bloqueantes via FFmpeg)
+    frames, audio_bytes = await asyncio.gather(
         asyncio.to_thread(_extract_video_frames_sync, video_bytes),
-        asyncio.to_thread(_transcribe_video_audio_sync, video_bytes),
+        asyncio.to_thread(_extract_video_audio_sync, video_bytes),
     )
 
     if not frames:
         logger.warning("[analyst-video] nenhum frame extraído — usando análise mínima")
         return _minimal_video_analysis(content_type)
+
+    # Transcrição via tool plugável (provider configurável via TRANSCRIPTION_PROVIDER)
+    transcription: str | None = None
+    if audio_bytes:
+        from app.tools.transcription import transcribe_audio
+        transcription = await asyncio.to_thread(transcribe_audio, audio_bytes)
 
     if transcription:
         logger.info(f"[analyst-video] transcrição obtida {len(transcription)} chars")
