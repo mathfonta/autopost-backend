@@ -104,8 +104,9 @@ async def _call_claude(messages: list[dict]) -> str:
         model=MODEL,
         max_tokens=MAX_TOKENS,
         timeout=30.0,
-        system=_SYSTEM_PROMPT,
+        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         messages=messages,
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
     return response.content[0].text.strip()
 

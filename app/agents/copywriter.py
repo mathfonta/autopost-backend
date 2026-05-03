@@ -244,6 +244,22 @@ Regras das hashtags:
 - Todas em minúsculo, sem espaços, sem acentos
 """
 
+# Bloco estático da skill library — cacheado via prompt caching Anthropic (cache_control ephemeral).
+# Inclui todas as estratégias, intenções e mapeamentos para atingir o mínimo de 1024 tokens.
+# Cache hit: 90% de desconto nos tokens deste bloco. Cache TTL: 5 minutos.
+_STATIC_LIBRARY = (
+    "=== BIBLIOTECA DE ESTRATÉGIAS (referência para uso conforme instrução) ===\n\n"
+    "ESTRATÉGIAS DISPONÍVEIS:\n"
+    + "\n".join(f"[{k}]\n{v}" for k, v in STRATEGY_PROMPTS.items())
+    + "\n\nINTENÇÕES DE CONTEÚDO (LEGADO):\n"
+    + "\n".join(f"[{k}] {v}" for k, v in CONTENT_TYPE_PROMPTS.items())
+    + "\n\nTONS DE VOZ:\n"
+    + "\n".join(f"[{k}] {v}" for k, v in _VOICE_TONE_MAP.items())
+    + "\n\nABORDAGENS DE RETRY:\n"
+    + "\n".join(f"[tentativa_{k}] {v}" for k, v in _RETRY_APPROACHES.items())
+    + "\n\n=== FIM DA BIBLIOTECA ===\n"
+)
+
 
 _VOICE_TONE_MAP = {
     "formal":    "tom formal, profissional e aspiracional",
@@ -380,8 +396,19 @@ FOTO:
         model=MODEL,
         max_tokens=MAX_TOKENS,
         timeout=30.0,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    # Bloco estático cacheado — mesmo conteúdo em todas as chamadas
+                    {"type": "text", "text": _STATIC_LIBRARY, "cache_control": {"type": "ephemeral"}},
+                    # Bloco dinâmico — dados variáveis do cliente e foto
+                    {"type": "text", "text": user_message},
+                ],
+            }
+        ],
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
 
     raw = message.content[0].text.strip()

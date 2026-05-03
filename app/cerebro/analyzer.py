@@ -94,8 +94,9 @@ async def analyze_and_update_patterns() -> None:
         model=MODEL,
         max_tokens=MAX_TOKENS,
         timeout=60.0,
-        system=_SYSTEM_PROMPT,
+        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
 
     raw = message.content[0].text.strip()
