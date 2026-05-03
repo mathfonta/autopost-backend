@@ -174,26 +174,25 @@ def analyze_photo(self, request_id: str) -> str:
         req = _run_sync(_get_request_with_client(request_id))
         content_type = req.get("content_type", "")
 
-        # Vídeos não podem ser analisados com visão — pula para copy com análise mínima
+        # Vídeos: extrai frames e analisa com Claude Haiku (com fallback gracioso)
         if content_type in ("reels", "story"):
-            analysis = {
-                "quality": "good",
-                "quality_reason": "ok",
-                "content_type": content_type,
-                "description": "Vídeo enviado pelo usuário para publicação.",
-                "elementos_visuais": "",
-                "ambiente": "nao_aplicavel",
-                "nivel_acabamento": "nao_aplicavel",
-                "publish_clean": True,
-                "stage": "",
-            }
+            from app.agents.analyst import analyze_video_with_ai
+            analysis = _run_sync(analyze_video_with_ai(
+                video_key=req["photo_key"],
+                brand_profile=req["brand_profile"],
+                content_type=content_type,
+                user_context=req.get("user_context"),
+            ))
             _run_sync(_update_status(
                 request_id,
                 ContentStatus.copy,
                 result_field="analysis_result",
                 result_data=analysis,
             ))
-            logger.info(f"[analyze_photo] vídeo — análise ignorada request_id={request_id}")
+            logger.info(
+                f"[analyze_photo] vídeo analisado request_id={request_id} "
+                f"quality={analysis.get('quality')} desc_len={len(analysis.get('description',''))}"
+            )
             return request_id
 
         # Multi-foto: analisa cada foto individualmente e agrega

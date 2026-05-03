@@ -2,10 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Dependências do sistema (Pillow precisa de libz)
+# Dependências do sistema
 RUN apt-get update && apt-get install -y \
     libzbar0 \
     libgl1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala dependências Python
