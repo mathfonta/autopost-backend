@@ -26,6 +26,7 @@ boto3>=1.34.0            # Cloudflare R2 (compatível S3)
 
 # ─── IA ──────────────────────────────────────────────────────
 anthropic>=0.25.0
+posthog>=3.0.0               # product analytics
 
 # ─── Imagens ─────────────────────────────────────────────────
 Pillow>=10.1.0

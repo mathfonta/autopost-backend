@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from app.tasks import celery_app
 from app.models.content_request import ContentRequest, ContentStatus
+from app.core.analytics import track as analytics_track
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def _get_request_with_client(request_id: str) -> dict:
 
         return {
             "id": str(req.id),
+            "client_id": str(req.client_id),
             "photo_url": req.photo_url,
             "photo_key": req.photo_key,
             "photo_keys": list(req.photo_keys or [req.photo_key]),
@@ -592,6 +594,13 @@ def publish_post(self, request_id: str) -> str:
             result_field="publish_result",
             result_data=publish_result,
         ))
+
+        analytics_track(req["client_id"], "post_published", {
+            "post_id": request_id,
+            "content_type": content_type,
+            "has_instagram": bool(instagram_post_id),
+            "has_facebook": bool(facebook_post_id),
+        })
 
         # Agenda coleta de métricas 24h depois
         if instagram_post_id:
