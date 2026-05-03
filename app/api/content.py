@@ -10,12 +10,13 @@ import uuid
 import logging
 from math import ceil
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_client
 from app.core.database import get_db
+from app.core.limiter import limiter
 from app.core.storage import upload_to_r2, generate_presigned_url
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
@@ -82,7 +83,9 @@ def _freshen_urls(req: ContentRequest) -> ContentRequest:
 # ─── POST /content-requests ─────────────────────────────────────
 
 @router.post("", response_model=ContentRequestResponse, status_code=201)
+@limiter.limit("10/hour")
 async def submit_photo(
+    request: Request,
     photo: UploadFile | None = File(None),
     photos: list[UploadFile] | None = File(None),
     content_type: str | None = Form(None),

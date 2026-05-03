@@ -31,7 +31,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ─── Register ────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("5/hour")
 async def register(
+    request: Request,
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -124,7 +126,8 @@ async def refresh(body: RefreshRequest):
 # ─── Forgot Password ─────────────────────────────────────────
 
 @router.post("/forgot-password", status_code=204)
-async def forgot_password(body: ForgotPasswordRequest):
+@limiter.limit("5/hour")
+async def forgot_password(request: Request, body: ForgotPasswordRequest):
     """Envia e-mail de recuperação. Sempre retorna 204 (não revela se email existe)."""
     settings = get_settings()
     redirect_to = f"{settings.FRONTEND_URL}/reset-password"
