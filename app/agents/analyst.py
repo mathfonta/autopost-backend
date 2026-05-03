@@ -270,6 +270,53 @@ def _extract_video_frames_sync(video_bytes: bytes, n_frames: int = 3) -> list[by
         return frames
 
 
+def _transcribe_video_audio_sync(video_bytes: bytes) -> str | None:
+    """
+    Extrai áudio do vídeo e transcreve via OpenAI Whisper API.
+    Retorna texto transcrito ou None se falhar (sem chave, vídeo mudo, timeout).
+    """
+    try:
+        from openai import OpenAI
+        client = OpenAI()  # usa OPENAI_API_KEY do ambiente
+    except Exception:
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = os.path.join(tmpdir, "input.mp4")
+        audio_path = os.path.join(tmpdir, "audio.mp3")
+
+        with open(video_path, "wb") as f:
+            f.write(video_bytes)
+
+        try:
+            subprocess.run(
+                ["ffmpeg", "-i", video_path, "-vn",
+                 "-ar", "16000", "-ac", "1", "-b:a", "32k",
+                 "-fs", "24000000",   # máx 24 MB
+                 audio_path],
+                capture_output=True, timeout=30, check=True,
+            )
+        except Exception as e:
+            logger.warning(f"[analyst-video] extração de áudio falhou: {e}")
+            return None
+
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+            return None  # vídeo provavelmente sem áudio
+
+        try:
+            with open(audio_path, "rb") as f:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f,
+                    language="pt",
+                )
+            text = (transcript.text or "").strip()
+            return text if text else None
+        except Exception as e:
+            logger.warning(f"[analyst-video] Whisper falhou: {e}")
+            return None
+
+
 async def analyze_video_with_ai(
     video_key: str,
     brand_profile: dict,
@@ -312,7 +359,7 @@ async def analyze_video_with_ai(
         "Os frames representam o início, meio e fim do vídeo."
     )
 
-    # Baixa e extrai frames
+    # Baixa vídeo
     logger.info(f"[analyst-video] baixando vídeo key={video_key[:60]}")
     try:
         video_bytes = await download_from_r2(video_key)
@@ -320,11 +367,21 @@ async def analyze_video_with_ai(
         logger.warning(f"[analyst-video] falha ao baixar vídeo: {e}")
         return _minimal_video_analysis(content_type)
 
-    frames = await asyncio.to_thread(_extract_video_frames_sync, video_bytes)
+    # Extrai frames e transcreve áudio em paralelo
+    frames, transcription = await asyncio.gather(
+        asyncio.to_thread(_extract_video_frames_sync, video_bytes),
+        asyncio.to_thread(_transcribe_video_audio_sync, video_bytes),
+    )
 
     if not frames:
         logger.warning("[analyst-video] nenhum frame extraído — usando análise mínima")
         return _minimal_video_analysis(content_type)
+
+    if transcription:
+        logger.info(f"[analyst-video] transcrição obtida {len(transcription)} chars")
+        user_message += f"\n\nTranscrição da fala no vídeo:\n\"{transcription}\""
+    else:
+        logger.info("[analyst-video] sem transcrição — análise apenas visual")
 
     logger.info(f"[analyst-video] {len(frames)} frames extraídos — chamando Claude Haiku")
 
