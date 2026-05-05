@@ -480,6 +480,12 @@ def publish_post(self, request_id: str) -> str:
     logger.info(f"[publish_post] request_id={request_id}")
 
     try:
+        # Idempotência: se já foi publicado (ex: retry após crash de worker), evita duplicata no Instagram
+        req_check = _run_sync(_get_request(request_id))
+        if req_check.status == ContentStatus.published:
+            logger.info(f"[publish_post] já publicado — idempotência request_id={request_id}")
+            return request_id
+
         _run_sync(_update_status(request_id, ContentStatus.publishing))
 
         req = _run_sync(_get_request_with_client(request_id))
