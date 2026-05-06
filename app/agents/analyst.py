@@ -28,6 +28,45 @@ logger = logging.getLogger(__name__)
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 1024
 
+# Claude API rejeita imagens base64 acima de 5 MB; usamos 4 MB como margem segura
+CLAUDE_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _compress_image_for_claude(img_bytes: bytes) -> tuple[bytes, str]:
+    """Comprime/redimensiona imagem para caber no limite de 5 MB da API Claude."""
+    from io import BytesIO
+    from PIL import Image
+
+    if len(img_bytes) <= CLAUDE_MAX_IMAGE_BYTES:
+        return img_bytes, "image/jpeg"
+
+    img = Image.open(BytesIO(img_bytes))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    w, h = img.size
+
+    for quality in (80, 60, 40, 25):
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        if buf.tell() <= CLAUDE_MAX_IMAGE_BYTES:
+            logger.info(f"[analyst] comprimiu {len(img_bytes):,}→{buf.tell():,} bytes (q={quality})")
+            return buf.getvalue(), "image/jpeg"
+
+    for scale in (0.75, 0.5, 0.35, 0.25):
+        resized = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        buf = BytesIO()
+        resized.save(buf, format="JPEG", quality=60, optimize=True)
+        if buf.tell() <= CLAUDE_MAX_IMAGE_BYTES:
+            logger.info(f"[analyst] redimensionou {w}×{h}→{resized.size} bytes={buf.tell():,}")
+            return buf.getvalue(), "image/jpeg"
+
+    resized = img.resize((int(w * 0.2), int(h * 0.2)), Image.LANCZOS)
+    buf = BytesIO()
+    resized.save(buf, format="JPEG", quality=25, optimize=True)
+    logger.warning(f"[analyst] compressão máxima aplicada: {buf.tell():,} bytes")
+    return buf.getvalue(), "image/jpeg"
+
 # Mensagens de erro amigáveis por motivo de reprovação
 _QUALITY_MESSAGES = {
     "dark":      "A foto está muito escura. Tente tirar com mais luz natural ou use o flash.",
@@ -124,8 +163,8 @@ async def analyze_photo_with_ai(
             img_resp = await http.get(photo_url)
         img_resp.raise_for_status()
         img_bytes = img_resp.content
+    img_bytes, media_type = _compress_image_for_claude(img_bytes)
     img_b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
-    media_type = "image/jpeg"
 
     message = await client.messages.create(
         model=MODEL,
