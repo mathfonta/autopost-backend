@@ -350,11 +350,26 @@ async def generate_copy_with_ai(
 
     # Injeta contexto do usuário (especificação de material, serviço, produto)
     user_context_section = ""
+    music_section = ""
     if user_context and user_context.strip():
-        user_context_section = (
-            f"\n\nCONTEXTO DO CLIENTE (use para enriquecer — não substitui o que você vê na foto):\n"
-            f"{user_context.strip()}"
-        )
+        # Extrai música de fundo do contexto se presente
+        lines = user_context.strip().splitlines()
+        music_line = next((l for l in lines if l.startswith("Música de fundo:")), None)
+        other_lines = [l for l in lines if not l.startswith("Música de fundo:")]
+        pure_context = "\n".join(other_lines).strip()
+
+        if music_line:
+            song = music_line.replace("Música de fundo:", "").strip()
+            music_section = (
+                f"\n\nMÚSICA DE FUNDO SELECIONADA: {song}\n"
+                "INSTRUÇÃO OBRIGATÓRIA: inclua a música no final de caption_long e caption_short "
+                f"neste formato exato: 🎵 {song}"
+            )
+        if pure_context:
+            user_context_section = (
+                f"\n\nCONTEXTO DO CLIENTE (use para enriquecer — não substitui o que você vê na foto):\n"
+                f"{pure_context}"
+            )
 
     # Injeta abordagem forçada para garantir variação real no retry
     retry_section = ""
@@ -386,7 +401,7 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{music_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
 """
 
     logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
