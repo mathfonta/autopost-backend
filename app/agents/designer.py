@@ -101,7 +101,18 @@ def _process_clean_photo(img: Image.Image, logo: Image.Image | None) -> Image.Im
 
 
 def _load_font(size: int) -> ImageFont.ImageFont:
-    """Carrega fonte com tamanho explícito (Pillow >= 10.1.0)."""
+    """Carrega fonte TTF com suporte a Unicode. Fallback para fonte padrão se indisponível."""
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    ]
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except (IOError, OSError):
+            continue
     return ImageFont.load_default(size=size)
 
 

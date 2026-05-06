@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     libzbar0 \
     libgl1 \
     ffmpeg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala dependências Python
