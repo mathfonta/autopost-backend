@@ -244,6 +244,12 @@ Regras das hashtags:
 - Todas em minúsculo, sem espaços, sem acentos
 """
 
+_VOICE_TONE_MAP = {
+    "formal":    "tom formal, profissional e aspiracional",
+    "casual":    "tom descontraído, próximo e direto",
+    "technical": "tom técnico, preciso e informativo",
+}
+
 # Bloco estático da skill library — cacheado via prompt caching Anthropic (cache_control ephemeral).
 # Inclui todas as estratégias, intenções e mapeamentos para atingir o mínimo de 1024 tokens.
 # Cache hit: 90% de desconto nos tokens deste bloco. Cache TTL: 5 minutos.
@@ -259,13 +265,6 @@ _STATIC_LIBRARY = (
     + "\n".join(f"[tentativa_{k}] {v}" for k, v in _RETRY_APPROACHES.items())
     + "\n\n=== FIM DA BIBLIOTECA ===\n"
 )
-
-
-_VOICE_TONE_MAP = {
-    "formal":    "tom formal, profissional e aspiracional",
-    "casual":    "tom descontraído, próximo e direto",
-    "technical": "tom técnico, preciso e informativo",
-}
 
 
 async def generate_copy_with_ai(
