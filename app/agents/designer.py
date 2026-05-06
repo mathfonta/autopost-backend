@@ -263,10 +263,6 @@ async def process_image(
         original = await _download_image(photo_url, photo_key)
         img = _process_antes_depois(original, logo)
 
-    elif not publish_clean or content_type in ("dica", "promocao"):
-        design_type = "card"
-        img = _process_card(description, brand_profile, logo)
-
     else:
         design_type = "clean_photo"
         original = await _download_image(photo_url, photo_key)
