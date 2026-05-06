@@ -1,0 +1,71 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  import-check:
+    name: Verificar imports dos agentes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Verificar imports de todos os agentes
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost/test
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_KEY: test-service-key
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-jwt-secret-32-chars-minimum!!
+          CLOUDFLARE_R2_BUCKET: test-bucket
+          CLOUDFLARE_R2_ACCESS_KEY: test-access-key
+          CLOUDFLARE_R2_SECRET_KEY: test-secret-key
+          CLOUDFLARE_R2_ENDPOINT: https://test.r2.cloudflarestorage.com
+          ANTHROPIC_API_KEY: sk-ant-test
+        run: |
+          python -c "import app.agents.analyst; print('analyst OK')"
+          python -c "import app.agents.copywriter; print('copywriter OK')"
+          python -c "import app.agents.designer; print('designer OK')"
+          python -c "import app.agents.publisher; print('publisher OK')"
+
+  test:
+    name: Testes automatizados
+    runs-on: ubuntu-latest
+    needs: import-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Executar pytest
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost/test
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_KEY: test-service-key
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-jwt-secret-32-chars-minimum!!
+          CLOUDFLARE_R2_BUCKET: test-bucket
+          CLOUDFLARE_R2_ACCESS_KEY: test-access-key
+          CLOUDFLARE_R2_SECRET_KEY: test-secret-key
+          CLOUDFLARE_R2_ENDPOINT: https://test.r2.cloudflarestorage.com
+          ANTHROPIC_API_KEY: sk-ant-test
+        run: pytest tests/ -v --tb=short -x --ignore=tests/test_smoke_pipeline.py
