@@ -40,7 +40,8 @@ router = APIRouter(prefix="/content-requests", tags=["content"])
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime"}
 ALLOWED_CONTENT_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE       = 20  * 1024 * 1024  # 20 MB  — fotos
+MAX_VIDEO_FILE_SIZE = 500 * 1024 * 1024  # 500 MB — vídeos (comprimidos internamente)
 PRESIGNED_URL_TTL = 3600  # 1 hora
 
 VALID_CONTENT_TYPES = {
@@ -143,13 +144,20 @@ async def submit_photo(
             )
 
         data = await upload.read()
-        if len(data) > MAX_FILE_SIZE:
+        is_video = photo_content_type in ALLOWED_VIDEO_TYPES
+        size_limit = MAX_VIDEO_FILE_SIZE if is_video else MAX_FILE_SIZE
+        size_label = "500MB" if is_video else "20MB"
+        if len(data) > size_limit:
             raise HTTPException(
                 status_code=422,
-                detail=f"Foto {i + 1}: arquivo muito grande ({len(data) // (1024 * 1024)}MB). Máximo: 20MB.",
+                detail=f"Arquivo {i + 1}: muito grande ({len(data) // (1024 * 1024)}MB). Máximo: {size_label}.",
             )
 
-        ext = ".mp4" if photo_content_type in ALLOWED_VIDEO_TYPES else ".jpg"
+        if is_video:
+            from app.core.video import compress_video
+            data = compress_video(data, content_type=photo_content_type)
+
+        ext = ".mp4" if is_video else ".jpg"
         key = f"uploads/{current_client.id}/{uuid.uuid4()}{ext}"
         try:
             url = await upload_to_r2(key, data, photo_content_type)

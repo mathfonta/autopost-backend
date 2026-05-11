@@ -2,6 +2,12 @@
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
+# NOTA AC4 (Story 12.2): O limite de body size do proxy Railway é gerenciado pela
+# infraestrutura da plataforma (não configurável via railway.toml ou variável de ambiente).
+# O backend aceita até 500 MB, mas vídeos > ~100 MB podem ser rejeitados pelo proxy
+# antes de chegar à aplicação. Para vídeos muito grandes, a solução definitiva é
+# upload direto ao R2 via presigned URL (fora do escopo desta story).
+
 # ─── Serviço: API ────────────────────────────────────────────
 [[services]]
 name = "api"
