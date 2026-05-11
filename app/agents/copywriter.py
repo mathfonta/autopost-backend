@@ -20,10 +20,10 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 1500
-MAX_CAPTION_LONG_CHARS = 400
-MAX_CAPTION_SHORT_CHARS = 150
-MAX_CAPTION_STORIES_CHARS = 100
+MAX_TOKENS = 2500
+MAX_CAPTION_LONG_CHARS = 1500
+MAX_CAPTION_SHORT_CHARS = 300
+MAX_CAPTION_STORIES_CHARS = 150
 
 # Horários de pico por segmento (fallback se Claude não sugerir)
 _DEFAULT_TIMES = {
@@ -224,14 +224,25 @@ Crie 3 variações de legenda para Instagram baseadas EXCLUSIVAMENTE nas informa
 REGRAS OBRIGATÓRIAS:
 1. NUNCA invente dados, medidas, valores, prazos ou informações não presentes na descrição
 2. Use o tom de voz e segmento do cliente fornecidos
-3. Inclua emojis relevantes (máximo 5 por variação)
-4. As 3 variações devem ter abordagens complementares, não repetir o mesmo texto
+3. Use emojis com inteligência — intercale no texto para dar ritmo, não só no final
+4. As 3 variações devem ter abordagens COMPLETAMENTE diferentes — hook diferente, estrutura diferente, ângulo diferente
+
+QUALIDADE DA LEGENDA LONGA (caption_long):
+- Escreva até 1500 caracteres — use o espaço disponível
+- Estrutura sugerida: hook impactante (1 frase) → problema ou contexto → processo ou solução → resultado → CTA
+- Use quebras de parágrafo para facilitar a leitura (\\n\\n entre parágrafos)
+- Seja específico: mencione materiais, técnicas, detalhes do serviço quando disponíveis
+- Tom storytelling — conte o que aconteceu, não apenas descreva a foto
+
+QUALIDADE DA LEGENDA CURTA (caption_short):
+- Até 300 chars, mas não precisa ser mínimo — seja rico dentro do limite
+- Hook direto + resultado concreto
 
 Responda EXCLUSIVAMENTE em JSON válido, sem texto fora do JSON:
 {
-  "caption_long": "<legenda completa com storytelling, máximo 400 chars, sem hashtags>",
-  "caption_short": "<versão objetiva e direta, máximo 150 chars, sem hashtags>",
-  "caption_stories": "<texto para Stories, tom conversacional e imediato, máximo 100 chars>",
+  "caption_long": "<legenda completa com storytelling, parágrafos, emojis intercalados, sem hashtags>",
+  "caption_short": "<versão objetiva e direta, até 300 chars, sem hashtags>",
+  "caption_stories": "<texto para Stories, tom conversacional e imediato, até 150 chars>",
   "hashtags": ["hashtag1", "hashtag2", ...],
   "cta": "<call-to-action específico, ex: Entre em contato pelo link na bio!>",
   "suggested_time": "<HH:MM — melhor horário para publicar para este segmento>"
