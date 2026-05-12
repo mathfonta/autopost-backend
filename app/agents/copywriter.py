@@ -382,6 +382,15 @@ async def generate_copy_with_ai(
                 f"{pure_context}"
             )
 
+    # Injeta transcrição do áudio se disponível (Reels com narração)
+    transcript_section = ""
+    if analysis_result.get("audio_transcript"):
+        transcript_section = (
+            f"\n\nTRANSCRIÇÃO DO ÁUDIO (profissional narrou durante o vídeo):\n"
+            f"{analysis_result['audio_transcript']}\n"
+            "USE a transcrição como contexto principal — ela revela o que realmente aconteceu."
+        )
+
     # Injeta abordagem forçada para garantir variação real no retry
     retry_section = ""
     if retry_attempt > 0:
@@ -412,10 +421,10 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{music_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'}")
+    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'} audio_transcript={'sim' if transcript_section else 'não'}")
 
     message = await client.messages.create(
         model=MODEL,

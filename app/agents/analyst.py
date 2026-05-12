@@ -407,9 +407,14 @@ async def analyze_video_with_ai(
         transcription = await asyncio.to_thread(transcribe_audio, audio_bytes)
 
     if transcription:
-        logger.info(f"[analyst-video] transcrição obtida {len(transcription)} chars")
-        user_message += f"\n\nTranscrição da fala no vídeo:\n\"{transcription}\""
-    else:
+        word_count = len(transcription.split())
+        if word_count < 20:
+            logger.info(f"[analyst-video] transcrição filtrada ({word_count} palavras < 20) — descartada")
+            transcription = None
+        else:
+            logger.info(f"[analyst-video] transcrição obtida {len(transcription)} chars ({word_count} palavras)")
+            user_message += f"\n\nTranscrição da fala no vídeo:\n\"{transcription}\""
+    if not transcription:
         logger.info("[analyst-video] sem transcrição — análise apenas visual")
 
     logger.info(f"[analyst-video] {len(frames)} frames extraídos — chamando Claude Haiku")
@@ -458,11 +463,13 @@ async def analyze_video_with_ai(
     result.setdefault("nivel_acabamento", "nao_aplicavel")
     result.setdefault("publish_clean", True)
     result.setdefault("stage", "")
+    result["audio_transcript"] = transcription  # None se filtrado/falhou
 
     logger.info(
         f"[analyst-video] quality={result['quality']} "
         f"content_type={result['content_type']} "
-        f"frames_analisados={len(frames)}"
+        f"frames_analisados={len(frames)} "
+        f"audio_transcript={'sim' if transcription else 'não'}"
     )
     return result
 
