@@ -20,6 +20,11 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# ─── Diagnóstico de ambiente (remover após confirmar fix) ─────────────────────
+_raw_copy_provider = os.environ.get("COPY_PROVIDER", "NOT_IN_ENV")
+logger.info(f"[copywriter] RAW os.environ COPY_PROVIDER={_raw_copy_provider!r}")
+# ──────────────────────────────────────────────────────────────────────────────
+
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 2500
 MAX_CAPTION_LONG_CHARS = 1500
@@ -579,19 +584,4 @@ FOTO:
     # caption principal = caption_long (para publicação e retrocompat)
     result["caption"] = result["caption_long"] or ""
 
-    # Normaliza hashtags: remove # se presente, lowercase, sem espaços
-    result["hashtags"] = [
-        h.lstrip("#").lower().replace(" ", "")
-        for h in result["hashtags"]
-        if h.strip()
-    ]
-
-    logger.info(
-        f"[copywriter] caption_long={len(result['caption_long'])} chars "
-        f"caption_short={len(result['caption_short'] or '')} chars "
-        f"caption_stories={len(result['caption_stories'] or '')} chars "
-        f"hashtags={len(result['hashtags'])} "
-        f"time={result['suggested_time']}"
-    )
-
-    return result
+    # Normaliza hashtags: remove # se presente, lowe
