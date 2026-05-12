@@ -218,34 +218,61 @@ STRATEGY_PROMPTS: dict[str, str] = {
 }
 
 _SYSTEM_PROMPT = """\
-Você é um especialista em copywriting para redes sociais de pequenas empresas brasileiras.
+Você é um especialista em copywriting viral para redes sociais de pequenas empresas brasileiras.
 Crie 3 variações de legenda para Instagram baseadas EXCLUSIVAMENTE nas informações fornecidas.
 
 REGRAS OBRIGATÓRIAS:
 1. NUNCA invente dados, medidas, valores, prazos ou informações não presentes na descrição
 2. Use o tom de voz e segmento do cliente fornecidos
-3. Use emojis com inteligência — intercale no texto para dar ritmo, não só no final
-4. As 3 variações devem ter abordagens COMPLETAMENTE diferentes — hook diferente, estrutura diferente, ângulo diferente
-5. PARÁGRAFOS OBRIGATÓRIOS em caption_long: separe cada bloco com \\n\\n no JSON. NUNCA escreva caption_long como bloco único. Mínimo 3 parágrafos.
+3. As 3 variações devem ter abordagens COMPLETAMENTE diferentes — hook diferente, estrutura diferente, ângulo diferente
+4. PARÁGRAFOS OBRIGATÓRIOS em caption_long: separe cada bloco com \\n\\n no JSON. NUNCA escreva caption_long como bloco único. Mínimo 3 parágrafos.
+5. NUNCA comece a legenda com o nome da empresa, "Confira", "Olha" ou "Veja".
+
+6. HOOK OBRIGATÓRIO — A PRIMEIRA FRASE PARA O SCROLL (máx 10 palavras):
+   Adapte uma das estruturas ao conteúdo real disponível:
+   - Situação inesperada: "A cliente trouxe a peça errada. Veja o que fizemos 👇"
+   - Pergunta-espelho: "Você sabia que [fato surpreendente do nicho]?"
+   - Número concreto: "3 horas. Um resultado que o cliente não esperava."
+   - Contraste: "Parecia impossível. Mas ficou assim 🏠"
+   - Revelação: "Ninguém fala sobre o que acontece quando [situação real do serviço]."
+
+7. RITMO VISUAL OBRIGATÓRIO:
+   Alterne frases curtas (5–8 palavras) com frases médias (10–15 palavras).
+   Máximo 3 linhas por parágrafo. O espaço em branco é descanso visual — use-o.
+
+8. EMOJIS — POSICIONAMENTO PRECISO:
+   - 1 emoji no hook (funcional, reflete o conteúdo — nunca decorativo)
+   - 1 emoji por parágrafo do desenvolvimento
+   - 1–2 emojis no CTA
+   - Total: 4–7 emojis por caption_long
+   - NUNCA emoji sozinho numa linha. NUNCA mais de 2 emojis seguidos.
+
+9. CTA COM AÇÃO IMEDIATA (nunca use "Entre em contato" genérico):
+   Use versões conversacionais e específicas:
+   - "Me chama no DM e conta o seu projeto 💬"
+   - "Comenta aqui: qual seria o seu maior desafio nisso? 👇"
+   - "Salva esse post para quando precisar 📌"
+   - "Link na bio para solicitar orçamento 🔗"
+   - "Me fala nos comentários como está o seu projeto 👇"
 
 QUALIDADE DA LEGENDA LONGA (caption_long):
 - Escreva até 1500 caracteres — use o espaço disponível
-- Estrutura sugerida: hook impactante (1 frase) → problema ou contexto → processo ou solução → resultado → CTA
-- Use quebras de parágrafo para facilitar a leitura (\\n\\n entre parágrafos)
+- Estrutura obrigatória: HOOK scroll-stopper (≤10 palavras) → contexto/problema → processo/solução → resultado → CTA
+- Use quebras de parágrafo (\\n\\n entre parágrafos)
 - Seja específico: mencione materiais, técnicas, detalhes do serviço quando disponíveis
 - Tom storytelling — conte o que aconteceu, não apenas descreva a foto
 
 QUALIDADE DA LEGENDA CURTA (caption_short):
-- Até 300 chars, mas não precisa ser mínimo — seja rico dentro do limite
-- Hook direto + resultado concreto
+- Até 300 chars — seja rico dentro do limite
+- Hook direto + resultado concreto + CTA mínimo
 
 Responda EXCLUSIVAMENTE em JSON válido, sem texto fora do JSON:
 {
-  "caption_long": "<hook (1 frase)>\\n\\n<contexto ou problema>\\n\\n<processo ou solução>\\n\\n<resultado + CTA>",
+  "caption_long": "<hook scroll-stopper ≤10 palavras>\\n\\n<contexto ou problema>\\n\\n<processo ou solução>\\n\\n<resultado + CTA>",
   "caption_short": "<versão objetiva e direta, até 300 chars, sem hashtags>",
   "caption_stories": "<texto para Stories, tom conversacional e imediato, até 150 chars>",
   "hashtags": ["hashtag1", "hashtag2", ...],
-  "cta": "<call-to-action específico, ex: Entre em contato pelo link na bio!>",
+  "cta": "<call-to-action conversacional, ex: Me chama no DM e conta o seu projeto 💬>",
   "suggested_time": "<HH:MM — melhor horário para publicar para este segmento>"
 }
 
@@ -265,9 +292,51 @@ _VOICE_TONE_MAP = {
 # Bloco estático da skill library — cacheado via prompt caching Anthropic (cache_control ephemeral).
 # Inclui todas as estratégias, intenções e mapeamentos para atingir o mínimo de 1024 tokens.
 # Cache hit: 90% de desconto nos tokens deste bloco. Cache TTL: 5 minutos.
+_VIRAL_TRIGGERS = {
+    "construção civil": (
+        "Solução criativa para problema inesperado | "
+        "Prazo cumprido contra expectativa | "
+        "Transformação dramática antes/depois | "
+        "Bastidores: o que acontece antes da entrega | "
+        "Material adaptado que superou o padrão"
+    ),
+    "arquitetura": (
+        "Projeto de meses revelado em um post | "
+        "Espaço sem solução aparente transformado | "
+        "Detalhe técnico invisível que faz toda diferença | "
+        "Cliente que não acreditava no resultado"
+    ),
+    "saúde": (
+        "Medo transformado em confiança | "
+        "Resultado visível que o paciente não esperava | "
+        "Desmistificar procedimento temido | "
+        "Cuidado que muda qualidade de vida"
+    ),
+    "dentista": (
+        "Sorriso que o paciente adiou por anos | "
+        "Tecnologia que não dói | "
+        "Antes/depois impactante | "
+        "Dúvida comum respondida com clareza"
+    ),
+    "comércio": (
+        "Produto com história por trás | "
+        "Bastidores da produção ou seleção | "
+        "Promoção com prazo real e urgência genuína | "
+        "Cliente satisfeito com resultado inesperado"
+    ),
+    "default": (
+        "Situação inesperada que virou solução | "
+        "Resultado que superou expectativa do cliente | "
+        "Bastidores do processo que ninguém vê | "
+        "Antes/depois da transformação entregue"
+    ),
+}
+
 _STATIC_LIBRARY = (
     "=== BIBLIOTECA DE ESTRATÉGIAS (referência para uso conforme instrução) ===\n\n"
-    "ESTRATÉGIAS DISPONÍVEIS:\n"
+    "GATILHOS VIRAIS POR NICHO (use para construir o hook e o desenvolvimento):\n"
+    + "\n".join(f"[{k}] {v}" for k, v in _VIRAL_TRIGGERS.items())
+    + "\n\nESTRATÉGIAS DISPONÍVEIS:\n"
     + "\n".join(f"[{k}]\n{v}" for k, v in STRATEGY_PROMPTS.items())
     + "\n\nINTENÇÕES DE CONTEÚDO (LEGADO):\n"
     + "\n".join(f"[{k}] {v}" for k, v in CONTENT_TYPE_PROMPTS.items())
@@ -392,6 +461,11 @@ async def generate_copy_with_ai(
             "USE a transcrição como contexto principal — ela revela o que realmente aconteceu."
         )
 
+    # Injeta gatilhos virais do nicho para guiar o hook
+    segment_key = segment.lower().strip()
+    viral_triggers = _VIRAL_TRIGGERS.get(segment_key, _VIRAL_TRIGGERS["default"])
+    viral_section = f"\n\nGATILHOS VIRAIS DO NICHO — use um destes ângulos para o hook:\n{viral_triggers}"
+
     # Injeta abordagem forçada para garantir variação real no retry
     retry_section = ""
     if retry_attempt > 0:
@@ -422,7 +496,7 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
 """
 
     logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'} audio_transcript={'sim' if transcript_section else 'não'}")
