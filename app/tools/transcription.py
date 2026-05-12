@@ -59,7 +59,7 @@ def _transcribe_gemini(audio_bytes: bytes, mime_type: str) -> str | None:
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash-preview-05-20",
             contents=[
                 {
                     "parts": [

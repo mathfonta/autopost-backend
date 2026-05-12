@@ -226,7 +226,7 @@ REGRAS OBRIGATÓRIAS:
 2. Use o tom de voz e segmento do cliente fornecidos
 3. Use emojis com inteligência — intercale no texto para dar ritmo, não só no final
 4. As 3 variações devem ter abordagens COMPLETAMENTE diferentes — hook diferente, estrutura diferente, ângulo diferente
-5. PARÁGRAFOS OBRIGATÓRIOS em caption_long: separe cada bloco de texto com \n\n (dois newlines). NUNCA escreva caption_long como um bloco único e contínuo. Mínimo 3 parágrafos separados por \n\n.
+5. PARÁGRAFOS OBRIGATÓRIOS em caption_long: separe cada bloco com \\n\\n no JSON. NUNCA escreva caption_long como bloco único. Mínimo 3 parágrafos.
 
 QUALIDADE DA LEGENDA LONGA (caption_long):
 - Escreva até 1500 caracteres — use o espaço disponível
@@ -241,7 +241,7 @@ QUALIDADE DA LEGENDA CURTA (caption_short):
 
 Responda EXCLUSIVAMENTE em JSON válido, sem texto fora do JSON:
 {
-  "caption_long": "<hook (1 frase)>\n\n<contexto ou problema>\n\n<processo ou solução>\n\n<resultado + CTA>",
+  "caption_long": "<hook (1 frase)>\\n\\n<contexto ou problema>\\n\\n<processo ou solução>\\n\\n<resultado + CTA>",
   "caption_short": "<versão objetiva e direta, até 300 chars, sem hashtags>",
   "caption_stories": "<texto para Stories, tom conversacional e imediato, até 150 chars>",
   "hashtags": ["hashtag1", "hashtag2", ...],
