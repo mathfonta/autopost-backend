@@ -54,7 +54,7 @@ def _transcribe_gemini(audio_bytes: bytes, mime_type: str) -> str | None:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1"})
 
         response = client.models.generate_content(
             model="gemini-2.5-flash-preview-05-20",
