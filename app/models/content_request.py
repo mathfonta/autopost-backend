@@ -100,13 +100,13 @@ class ContentRequest(Base, TenantMixin):
 
     # ─── Variações de legenda (Story 8.3) ───────────────────────
     caption_long: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Variação longa (até 400 chars)"
+        Text, nullable=True, comment="Variação longa (até 1500 chars)"
     )
     caption_short: Mapped[str | None] = mapped_column(
-        String(150), nullable=True, comment="Variação curta (até 150 chars)"
+        Text, nullable=True, comment="Variação curta (até 300 chars)"
     )
     caption_stories: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="Variação Stories (até 100 chars)"
+        Text, nullable=True, comment="Variação Stories (até 150 chars)"
     )
     caption_selected: Mapped[str | None] = mapped_column(
         String(10), nullable=True, server_default="long",
