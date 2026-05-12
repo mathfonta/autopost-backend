@@ -556,6 +556,9 @@ FOTO:
             cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
             cleaned = cleaned.lstrip("json").strip()
         result = json.loads(cleaned)
+        # Gemini pode retornar lista — pegar primeiro elemento
+        if isinstance(result, list):
+            result = result[0]
     except json.JSONDecodeError as e:
         raise ValueError(f"[copywriter/{provider}] JSON inválido: {raw[:300]}") from e
 
