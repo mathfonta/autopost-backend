@@ -11,6 +11,7 @@ Responsabilidades:
 
 import json
 import logging
+import os
 
 import anthropic
 
@@ -348,6 +349,24 @@ _STATIC_LIBRARY = (
 )
 
 
+async def _call_gemini_for_copy(user_message: str) -> str:
+    """Chama Gemini 2.5 Flash para gerar copy — provider alternativo ao Claude."""
+    from google import genai
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("[copywriter/gemini] GEMINI_API_KEY não configurada")
+
+    client = genai.Client(api_key=api_key)
+    full_prompt = f"{_SYSTEM_PROMPT}\n\n{_STATIC_LIBRARY}\n\n{user_message}"
+
+    response = await client.aio.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[full_prompt],
+    )
+    return (response.text or "").strip()
+
+
 async def generate_copy_with_ai(
     analysis_result: dict,
     brand_profile: dict,
@@ -372,7 +391,7 @@ async def generate_copy_with_ai(
         ValueError: se resposta não for JSON válido
     """
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    provider = os.getenv("COPY_PROVIDER", "claude").lower()
 
     # Monta contexto do cliente
     segment = brand_profile.get("segment", "empresa")
@@ -499,29 +518,31 @@ FOTO:
 - Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
 """
 
-    logger.info(f"[copywriter] chamando Claude Sonnet — segment={segment} content_type={content_type} user_intent={user_content_type} strategy={strategy or 'none'} user_context={'sim' if user_context else 'não'} voice_tone={voice_tone or 'padrão'} retry_attempt={retry_attempt} patterns={'sim' if patterns else 'não'} audio_transcript={'sim' if transcript_section else 'não'}")
+    logger.info(f"[copywriter] provider={provider} segment={segment} content_type={content_type} strategy={strategy or 'none'} retry_attempt={retry_attempt} audio_transcript={'sim' if transcript_section else 'não'}")
 
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        timeout=30.0,
-        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    # Bloco estático cacheado — mesmo conteúdo em todas as chamadas
-                    {"type": "text", "text": _STATIC_LIBRARY, "cache_control": {"type": "ephemeral"}},
-                    # Bloco dinâmico — dados variáveis do cliente e foto
-                    {"type": "text", "text": user_message},
-                ],
-            }
-        ],
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-    )
+    if provider == "gemini":
+        raw = await _call_gemini_for_copy(user_message)
+    else:
+        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        message = await client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            timeout=30.0,
+            system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _STATIC_LIBRARY, "cache_control": {"type": "ephemeral"}},
+                        {"type": "text", "text": user_message},
+                    ],
+                }
+            ],
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
+        raw = message.content[0].text.strip()
 
-    raw = message.content[0].text.strip()
-    logger.info(f"[copywriter] resposta bruta: {raw[:200]}")
+    logger.info(f"[copywriter] resposta bruta ({provider}): {raw[:200]}")
 
     try:
         cleaned = raw.strip()
@@ -530,7 +551,7 @@ FOTO:
             cleaned = cleaned.lstrip("json").strip()
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Claude retornou JSON inválido: {raw[:300]}") from e
+        raise ValueError(f"[copywriter/{provider}] JSON inválido: {raw[:300]}") from e
 
     # Backward compat: se Claude retornou formato antigo (só caption)
     if "caption" in result and "caption_long" not in result:
