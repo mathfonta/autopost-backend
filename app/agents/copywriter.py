@@ -392,6 +392,7 @@ async def generate_copy_with_ai(
     """
     settings = get_settings()
     provider = settings.COPY_PROVIDER.lower()
+    logger.info(f"[copywriter] COPY_PROVIDER={settings.COPY_PROVIDER!r} → usando provider={provider!r}")
 
     # Monta contexto do cliente
     segment = brand_profile.get("segment", "empresa")
