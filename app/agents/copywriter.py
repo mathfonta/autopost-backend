@@ -391,7 +391,7 @@ async def generate_copy_with_ai(
         ValueError: se resposta não for JSON válido
     """
     settings = get_settings()
-    provider = os.getenv("COPY_PROVIDER", "claude").lower()
+    provider = settings.COPY_PROVIDER.lower()
 
     # Monta contexto do cliente
     segment = brand_profile.get("segment", "empresa")

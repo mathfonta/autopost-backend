@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""           # Transcrição de áudio via Gemini (provider padrão)
     OPENAI_API_KEY: str = ""           # Transcrição de áudio via Whisper (provider alternativo)
     TRANSCRIPTION_PROVIDER: str = "gemini"  # "gemini" | "whisper"
+    COPY_PROVIDER: str = "claude"      # "claude" | "gemini"
 
     # ─── Meta ────────────────────────────────────────────────
     META_ACCESS_TOKEN: str = ""
