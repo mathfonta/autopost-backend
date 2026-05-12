@@ -60,16 +60,21 @@ class TestTranscriptionFilter:
 
 class TestGeminiProvider:
 
-    def _make_mock_genai(self, transcript_text: str) -> MagicMock:
+    def _make_mock_genai_module(self, transcript_text: str):
+        """Cria mocks para o novo SDK google-genai (google.genai.Client)."""
         mock_response = MagicMock()
         mock_response.text = transcript_text
 
-        mock_model = MagicMock()
-        mock_model.generate_content.return_value = mock_response
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
 
-        mock_genai = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model
-        return mock_genai
+        mock_genai_module = MagicMock()
+        mock_genai_module.Client.return_value = mock_client
+
+        mock_google = MagicMock()
+        mock_google.genai = mock_genai_module
+
+        return mock_google, mock_genai_module
 
     def test_gemini_returns_transcript(self):
         """Gemini disponível: retorna transcrição."""
@@ -79,9 +84,9 @@ class TestGeminiProvider:
             "a cliente chegou com o trilho mas a porta não servia, "
             "adaptamos uma porta maciça de cozinha, cortamos na medida e instalamos a fechadura"
         )
-        mock_genai = self._make_mock_genai(transcript_text)
+        mock_google, mock_genai = self._make_mock_genai_module(transcript_text)
 
-        with patch.dict(sys.modules, {"google.generativeai": mock_genai}), \
+        with patch.dict(sys.modules, {"google": mock_google, "google.genai": mock_genai}), \
              patch("app.tools.transcription.os.getenv", return_value="fake-gemini-key"):
             result = _transcribe_gemini(_fake_mp3(), "audio/mp3")
 
@@ -92,10 +97,13 @@ class TestGeminiProvider:
         """Gemini com erro de API: retorna None (fallback gracioso — AC3)."""
         from app.tools.transcription import _transcribe_gemini
 
-        mock_genai = MagicMock()
-        mock_genai.GenerativeModel.side_effect = Exception("API error 503")
+        mock_genai_module = MagicMock()
+        mock_genai_module.Client.side_effect = Exception("API error 503")
 
-        with patch.dict(sys.modules, {"google.generativeai": mock_genai}), \
+        mock_google = MagicMock()
+        mock_google.genai = mock_genai_module
+
+        with patch.dict(sys.modules, {"google": mock_google, "google.genai": mock_genai_module}), \
              patch("app.tools.transcription.os.getenv", return_value="fake-key"):
             result = _transcribe_gemini(_fake_mp3(), "audio/mp3")
 
@@ -114,9 +122,9 @@ class TestGeminiProvider:
         """Gemini retorna texto vazio: None."""
         from app.tools.transcription import _transcribe_gemini
 
-        mock_genai = self._make_mock_genai("")  # resposta vazia
+        mock_google, mock_genai = self._make_mock_genai_module("")  # resposta vazia
 
-        with patch.dict(sys.modules, {"google.generativeai": mock_genai}), \
+        with patch.dict(sys.modules, {"google": mock_google, "google.genai": mock_genai}), \
              patch("app.tools.transcription.os.getenv", return_value="fake-key"):
             result = _transcribe_gemini(_fake_mp3(), "audio/mp3")
 

@@ -45,33 +45,36 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/mp3") -> str | 
 # ─── Provider: Gemini ────────────────────────────────────────────
 
 def _transcribe_gemini(audio_bytes: bytes, mime_type: str) -> str | None:
-    """Transcreve usando Google Gemini 1.5 Flash (suporte nativo a áudio)."""
+    """Transcreve usando Google Gemini 2.0 Flash (suporte nativo a áudio)."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         logger.warning("[transcription/gemini] GEMINI_API_KEY não configurada — sem transcrição")
         return None
 
     try:
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        client = genai.Client(api_key=api_key)
 
-        audio_part = {
-            "inline_data": {
-                "mime_type": mime_type,
-                "data": base64.b64encode(audio_bytes).decode("utf-8"),
-            }
-        }
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-        response = model.generate_content([
-            audio_part,
-            (
-                "Transcreva o áudio em português do Brasil. "
-                "Retorne apenas o texto falado, sem comentários, "
-                "sem formatação adicional e sem marcações de tempo."
-            ),
-        ])
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                {
+                    "parts": [
+                        {"inline_data": {"mime_type": mime_type, "data": audio_b64}},
+                        {
+                            "text": (
+                                "Transcreva o áudio em português do Brasil. "
+                                "Retorne apenas o texto falado, sem comentários, "
+                                "sem formatação adicional e sem marcações de tempo."
+                            )
+                        },
+                    ]
+                }
+            ],
+        )
 
         text = (response.text or "").strip()
         logger.info(f"[transcription/gemini] {len(text)} chars transcritos")
