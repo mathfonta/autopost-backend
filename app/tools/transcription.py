@@ -13,7 +13,6 @@ Para trocar de provider: alterar TRANSCRIPTION_PROVIDER no Railway.
 O pipeline (analyst.py) não precisa ser modificado.
 """
 
-import base64
 import logging
 import os
 
@@ -45,7 +44,7 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/mp3") -> str | 
 # ─── Provider: Gemini ────────────────────────────────────────────
 
 def _transcribe_gemini(audio_bytes: bytes, mime_type: str) -> str | None:
-    """Transcreve usando Google Gemini 2.0 Flash (suporte nativo a áudio)."""
+    """Transcreve usando Google Gemini 2.5 Flash (suporte nativo a áudio)."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         logger.warning("[transcription/gemini] GEMINI_API_KEY não configurada — sem transcrição")
@@ -53,26 +52,17 @@ def _transcribe_gemini(audio_bytes: bytes, mime_type: str) -> str | None:
 
     try:
         from google import genai
+        from google.genai import types
 
         client = genai.Client(api_key=api_key)
-
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
         response = client.models.generate_content(
             model="gemini-2.5-flash-preview-05-20",
             contents=[
-                {
-                    "parts": [
-                        {"inline_data": {"mime_type": mime_type, "data": audio_b64}},
-                        {
-                            "text": (
-                                "Transcreva o áudio em português do Brasil. "
-                                "Retorne apenas o texto falado, sem comentários, "
-                                "sem formatação adicional e sem marcações de tempo."
-                            )
-                        },
-                    ]
-                }
+                "Transcreva o áudio em português do Brasil. "
+                "Retorne apenas o texto falado, sem comentários, "
+                "sem formatação adicional e sem marcações de tempo.",
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
             ],
         )
 
