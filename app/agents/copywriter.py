@@ -584,4 +584,34 @@ FOTO:
     # caption principal = caption_long (para publicação e retrocompat)
     result["caption"] = result["caption_long"] or ""
 
-    # Normaliza hashtags: remove # se presente, lowe
+    # Normaliza hashtags: remove # se presente, lowercase, sem espaços
+    result["hashtags"] = [
+        h.lstrip("#").lower().replace(" ", "")
+        for h in result["hashtags"]
+        if h.strip()
+    ]
+
+    logger.info(
+        f"[copywriter] caption_long={len(result['caption_long'])} chars "
+        f"caption_short={len(result['caption_short'] or '')} chars "
+        f"caption_stories={len(result['caption_stories'] or '')} chars "
+        f"hashtags={len(result['hashtags'])} "
+        f"time={result['suggested_time']}"
+    )
+
+    return resultrcase, sem espaços
+    result["hashtags"] = [
+        h.lstrip("#").lower().replace(" ", "")
+        for h in result["hashtags"]
+        if h.strip()
+    ]
+
+    logger.info(
+        f"[copywriter] caption_long={len(result['caption_long'])} chars "
+        f"caption_short={len(result['caption_short'] or '')} chars "
+        f"caption_stories={len(result['caption_stories'] or '')} chars "
+        f"hashtags={len(result['hashtags'])} "
+        f"time={result['suggested_time']}"
+    )
+
+    return result
