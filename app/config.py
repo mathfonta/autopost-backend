@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""           # Transcrição de áudio via Whisper (provider alternativo)
     TRANSCRIPTION_PROVIDER: str = "gemini"  # "gemini" | "whisper"
     COPY_PROVIDER: str = "claude"      # "claude" | "gemini"
+    EXA_PROVIDER: str = "disabled"    # "exa" | "disabled"
+    EXA_API_KEY: str = ""             # Exa Search API key — exa.ai
 
     # ─── Meta ────────────────────────────────────────────────
     META_ACCESS_TOKEN: str = ""
@@ -72,7 +74,6 @@ class Settings(BaseSettings):
     DROPBOX_APP_SECRET: str = ""
     ONEDRIVE_CLIENT_ID: str = ""
     ONEDRIVE_CLIENT_SECRET: str = ""
-
     model_config = {"env_file": ".env", "case_sensitive": True}
 
 
