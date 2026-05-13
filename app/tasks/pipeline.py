@@ -101,6 +101,23 @@ async def _save_caption_variants(
         await db.commit()
 
 
+async def _save_exa_trends_context(request_id: str, exa_context: str | None) -> None:
+    """Persiste o contexto Exa usado pelo copywriter para auditoria (Story 13.2)."""
+    if not exa_context:
+        return
+    from app.core.database import WorkerSessionLocal
+
+    uid = uuid.UUID(request_id)
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(
+            select(ContentRequest).where(ContentRequest.id == uid)
+        )
+        req = result.scalar_one_or_none()
+        if req:
+            req.exa_trends_context = exa_context
+            await db.commit()
+
+
 async def _get_request(request_id: str) -> ContentRequest:
     """Busca ContentRequest pelo ID, levanta se não encontrar."""
     from app.core.database import WorkerSessionLocal
@@ -257,11 +274,28 @@ def generate_copy(self, request_id: str) -> str:
         request_id
     """
     from app.agents.copywriter import generate_copy_with_ai
+    from app.tools.exa_search import search_exa_trends
 
     logger.info(f"[generate_copy] request_id={request_id}")
 
     try:
         req = _run_sync(_get_request_with_client(request_id))
+
+        # Busca Exa em paralelo ao acesso ao req já feito — roda antes do copywriter
+        brand_profile = req["brand_profile"]
+        segment = brand_profile.get("segment", "")
+        content_type = req.get("content_type") or req["analysis_result"].get("content_type", "")
+
+        exa_context = _run_sync(search_exa_trends(
+            segment=segment,
+            content_type=content_type,
+        ))
+
+        if exa_context:
+            logger.info(f"[generate_copy] exa tendências encontradas: {len(exa_context)} chars")
+        else:
+            logger.info("[generate_copy] exa sem tendências — continuando normalmente")
+
         copy = _run_sync(
             generate_copy_with_ai(
                 req["analysis_result"],
@@ -270,6 +304,7 @@ def generate_copy(self, request_id: str) -> str:
                 strategy=req.get("strategy"),
                 user_context=req.get("user_context"),
                 voice_tone=req.get("voice_tone", "casual"),
+                exa_context=exa_context,
             )
         )
 
@@ -279,6 +314,7 @@ def generate_copy(self, request_id: str) -> str:
             copy.get("caption_short"),
             copy.get("caption_stories"),
         ))
+        _run_sync(_save_exa_trends_context(request_id, exa_context))
 
         _run_sync(_update_status(
             request_id,

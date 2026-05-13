@@ -380,6 +380,7 @@ async def generate_copy_with_ai(
     user_context: str | None = None,
     voice_tone: str | None = None,
     retry_attempt: int = 0,
+    exa_context: str | None = None,
 ) -> dict:
     """
     Gera legenda, hashtags e CTA para o post usando Claude Sonnet.
@@ -497,6 +498,15 @@ async def generate_copy_with_ai(
         approach = _RETRY_APPROACHES.get(retry_attempt, _RETRY_APPROACHES[3])
         retry_section = f"\n\n{approach}"
 
+    # Injeta contexto de tendências do nicho via Exa Search (Story 13.2)
+    exa_section = ""
+    if exa_context:
+        exa_section = (
+            f"\n\n#TENDENCIAS_DO_NICHO (dados Exa, últimos 30 dias):\n{exa_context}\n"
+            "INSTRUÇÃO: Se houver #TENDENCIAS_DO_NICHO, use UMA referência sutil a tendências reais. "
+            "Não cite fontes nem URLs. Mantenha foco na obra/serviço da empresa."
+        )
+
     # Campos enriquecidos do analista (novos — podem estar ausentes em posts antigos)
     elementos = analysis_result.get("elementos_visuais", "")
     ambiente = analysis_result.get("ambiente", "")
@@ -521,10 +531,15 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}
 """
 
-    logger.info(f"[copywriter] provider={provider} segment={segment} content_type={content_type} strategy={strategy or 'none'} retry_attempt={retry_attempt} audio_transcript={'sim' if transcript_section else 'não'}")
+    logger.info(
+        f"[copywriter] provider={provider} segment={segment} content_type={content_type} "
+        f"strategy={strategy or 'none'} retry_attempt={retry_attempt} "
+        f"audio_transcript={'sim' if transcript_section else 'não'} "
+        f"exa_context={'sim (' + str(len(exa_context)) + ' chars)' if exa_context else 'não'}"
+    )
 
     if provider == "gemini":
         raw = await _call_gemini_for_copy(user_message)
@@ -576,7 +591,7 @@ FOTO:
     result.setdefault("cta", "Entre em contato pelo link na bio!")
     result.setdefault("suggested_time", _DEFAULT_TIMES.get(segment.lower().strip(), _DEFAULT_TIMES["default"]))
 
-    # Trunca variações nos limites
+    # Trunca variamites
     if result["caption_long"] and len(result["caption_long"]) > MAX_CAPTION_LONG_CHARS:
         result["caption_long"] = result["caption_long"][:MAX_CAPTION_LONG_CHARS - 3] + "..."
     if result["caption_short"] and len(result["caption_short"]) > MAX_CAPTION_SHORT_CHARS:
@@ -584,7 +599,7 @@ FOTO:
     if result["caption_stories"] and len(result["caption_stories"]) > MAX_CAPTION_STORIES_CHARS:
         result["caption_stories"] = result["caption_stories"][:MAX_CAPTION_STORIES_CHARS - 3] + "..."
 
-    # caption principal = caption_long (para publicação e retrocompat)
+    # caption principal = caption_long (para publiçação e retrocompat)
     result["caption"] = result["caption_long"] or ""
 
     # Normaliza hashtags: remove # se presente, lowercase, sem espaços

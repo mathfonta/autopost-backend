@@ -113,6 +113,12 @@ class ContentRequest(Base, TenantMixin):
         comment="Variação escolhida: long | short | stories"
     )
 
+    # ─── Inteligência externa (Epic 13) ─────────────────────────
+    exa_trends_context: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="Contexto de mercado Exa Search injetado no copywriter (Story 13.2)"
+    )
+
     # ─── Edição e retry pelo cliente ────────────────────────────
     caption_edited: Mapped[bool] = mapped_column(
         default=False, nullable=False, server_default="false",
