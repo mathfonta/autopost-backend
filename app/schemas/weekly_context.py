@@ -17,3 +17,9 @@ class WeeklyContextResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class StreakResponse(BaseModel):
+    streak: int
+    week_days: list[bool]
+    week_goal: int = 5

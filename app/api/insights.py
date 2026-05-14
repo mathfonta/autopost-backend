@@ -9,14 +9,15 @@ import logging
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_client
 from app.core.database import get_db
 from app.models.client import Client
+from app.models.content_request import ContentRequest, ContentStatus
 from app.models.weekly_context import WeeklyContext
-from app.schemas.weekly_context import WeeklyContextResponse
+from app.schemas.weekly_context import WeeklyContextResponse, StreakResponse
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,42 @@ async def get_weekly_insight(
         f"week_of={weekly.week_of} client={current_client.id}"
     )
     return weekly
+
+
+@router.get("/streak", response_model=StreakResponse)
+async def get_streak(
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retorna streak de dias consecutivos e progresso semanal do client autenticado.
+    Conta apenas posts com status = 'published'.
+    """
+    stmt = select(ContentRequest.updated_at).where(
+        ContentRequest.client_id == current_client.id,
+        ContentRequest.status == ContentStatus.published,
+    )
+    result = await db.execute(stmt)
+    published_dates: set[date] = {row[0].date() for row in result.fetchall()}
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+
+    week_days = [
+        (monday + timedelta(days=i)) in published_dates
+        for i in range(7)
+    ]
+
+    streak = 0
+    check = today
+    while check in published_dates:
+        streak += 1
+        check -= timedelta(days=1)
+
+    logger.info(
+        f"[insights] streak={streak} week_days={week_days} client={current_client.id}"
+    )
+    return StreakResponse(streak=streak, week_days=week_days, week_goal=5)
 
 
 def _current_monday() -> date:
