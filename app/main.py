@@ -17,6 +17,7 @@ from app.api.onboarding import router as onboarding_router
 from app.api.content import router as content_router
 from app.api.meta import router as meta_router
 from app.api.push import router as push_router
+from app.api.insights import router as insights_router
 
 settings = get_settings()
 
@@ -75,3 +76,4 @@ app.include_router(onboarding_router)
 app.include_router(content_router)
 app.include_router(meta_router)
 app.include_router(push_router)
+app.include_router(insights_router)

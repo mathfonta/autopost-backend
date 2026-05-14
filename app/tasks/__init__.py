@@ -15,6 +15,17 @@ celery_app = Celery(
     include=["app.tasks.pipeline"],
 )
 
+# ─── Celery Beat — tarefas agendadas ─────────────────────────────────────────
+from celery.schedules import crontab  # noqa: E402
+
+celery_app.conf.beat_schedule = {
+    "weekly-content-intelligence": {
+        "task": "pipeline.generate_weekly_intelligence",
+        "schedule": crontab(hour=7, minute=0, day_of_week="monday"),
+        # timezone já configurado em celery_app.conf.timezone = "America/Sao_Paulo"
+    },
+}
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
