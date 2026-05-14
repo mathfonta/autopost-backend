@@ -815,39 +815,143 @@ def renew_meta_tokens(self) -> str:
         raise self.retry(exc=exc, countdown=3600)
 
 
-# ─── Beat Schedule ───────────────────────────────────────────────
+# ─── Task 13.4: Weekly Intelligence (Celery Beat) ──────────
 
-celery_app.conf.beat_schedule = {
-    "update-cerebro-patterns": {
-        "task": "pipeline.update_cerebro_patterns",
-        "schedule": crontab(hour=8, minute=0, day_of_week=1),  # toda segunda 08:00
-    },
-    "promote-to-global-cerebro": {
-        "task": "pipeline.promote_to_global_cerebro",
-        "schedule": crontab(hour=9, minute=0, day_of_week=1, day_of_month="1-7"),  # 1ª segunda do mês 09:00
-    },
-    "renew-meta-tokens": {
-        "task": "pipeline.renew_meta_tokens",
-        "schedule": crontab(hour=7, minute=0),  # todo dia às 07:00
-    },
-}
-
-
-# ─── Pipeline Chain ──────────────────────────────────────────────
-
-def start_content_pipeline(request_id: str):
+@celery_app.task(bind=True, name="pipeline.generate_weekly_intelligence", max_retries=1)
+def generate_weekly_intelligence(self) -> str:
     """
-    Inicia o pipeline Analista → Copywriter → Designer.
-    Publicação é disparada separadamente após aprovação do cliente.
-
-    Uso:
-        start_content_pipeline(str(content_request.id))
+    Task Celery Beat — toda segunda às 07:00 (America/Sao_Paulo).
+    Busca tendências da semana no Exa, gera resumo com Gemini e salva em weekly_context.
+    Se EXA_PROVIDER=disabled: encerra sem fazer nada.
     """
-    pipeline = chain(
-        analyze_photo.s(request_id),
-        generate_copy.s(),
-        prepare_design.s(),
+    import os
+    from app.tools.exa_search import search_exa_raw
+
+    logger.info("[weekly-intel] iniciando")
+
+    if os.getenv("EXA_PROVIDER", "disabled") != "exa":
+        logger.info("[weekly-intel] EXA_PROVIDER=disabled — pulando")
+        return "skipped"
+
+    queries = [
+        "construção civil Brasil notícias semana",
+        "tendências acabamento revestimento 2025",
+        "mercado imobiliário Florianópolis Santa Catarina",
+    ]
+
+    async def _run():
+        all_snippets: list[str] = []
+        for q in queries:
+            snippets = await search_exa_raw(q, days_back=7)
+            all_snippets.extend(snippets)
+            logger.info(f"[weekly-intel] query={q!r} snippets={len(snippets)}")
+
+        if not all_snippets:
+            logger.info("[weekly-intel] nenhum snippet encontrado — encerrando")
+            return "no_snippets"
+
+        summary = await _summarize_snippets(all_snippets)
+        hashtags = _extract_weekly_hashtags(all_snippets)
+        await _save_weekly_context(
+            segment="Construção civil",
+            raw_snippets=all_snippets,
+            summary=summary,
+            hashtags=hashtags,
+        )
+        logger.info(
+            f"[weekly-intel] concluído: {len(all_snippets)} snippets "
+            f"summary={len(summary)} chars hashtags={len(hashtags)}"
+        )
+        return f"snippets={len(all_snippets)} hashtags={len(hashtags)}"
+
+    try:
+        return _run_sync(_run())
+    except Exception as exc:
+        logger.error(f"[weekly-intel] erro: {exc}")
+        raise self.retry(exc=exc, countdown=3600)
+
+
+async def _summarize_snippets(snippets: list[str]) -> str:
+    """Gera resumo em bullet points dos snippets Exa usando Gemini."""
+    import os
+    from google import genai
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key or not snippets:
+        return "\n".join(f"\u2022 {s[:200]}" for s in snippets[:5])
+
+    client = genai.Client(api_key=api_key)
+    joined = "\n".join(f"- {s}" for s in snippets[:10])
+    prompt = (
+        "Você é um analista de conteúdo digital. Resuma em 3-5 bullet points curtos "
+        "(máx 100 chars cada) as principais tendências desta semana para profissionais de "
+        "construção civil e reforma.\n\n"
+        f"Dados:\n{joined}\n\n"
+        "Formato: um bullet por linha, começando com \u2022"
     )
-    result = pipeline.apply_async()
-    logger.info(f"[pipeline] iniciado request_id={request_id} task_id={result.id}")
-    return result.id
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+        )
+        return (response.text or "").strip()
+    except Exception as e:
+        logger.warning(f"[weekly-intel] falha no Gemini summary: {e}")
+        return "\n".join(f"\u2022 {s[:200]}" for s in snippets[:5])
+
+
+def _extract_weekly_hashtags(snippets: list[str]) -> list[str]:
+    """Extrai hashtag candidates dos snippets via regex + termos-chave."""
+    import re
+    text = " ".join(snippets)
+    explicit = re.findall(r'#(\w+)', text)
+    # Extrai termos compostos relevantes
+    keywords = re.findall(r'\b([a-zA-Z\u00C0-\u00FF]{5,})\b', text.lower())
+    freq: dict[str, int] = {}
+    for kw in keywords:
+        freq[kw] = freq.get(kw, 0) + 1
+    top_kw = sorted(freq, key=lambda k: freq[k], reverse=True)[:8]
+    candidates = list(dict.fromkeys(explicit[:5] + top_kw))
+    return [f"#{h.lower()}" for h in candidates[:10]]
+
+
+async def _save_weekly_context(
+    segment: str,
+    raw_snippets: list[str],
+    summary: str,
+    hashtags: list[str],
+) -> None:
+    """Persiste WeeklyContext no banco para o segmento e semana atual."""
+    from datetime import date, timedelta
+    from app.core.database import WorkerSessionLocal
+    from app.models.weekly_context import WeeklyContext
+    from sqlalchemy import select
+
+    # Segunda-feira da semana atual
+    today = date.today()
+    week_of = today - timedelta(days=today.weekday())
+
+    async with WorkerSessionLocal() as db:
+        # Upsert: sobrescreve se já existir registro para (week_of, segment)
+        existing = await db.execute(
+            select(WeeklyContext).where(
+                WeeklyContext.week_of == week_of,
+                WeeklyContext.segment == segment,
+            )
+        )
+        wc = existing.scalar_one_or_none()
+        if wc:
+            wc.raw_snippets = raw_snippets
+            wc.summary = summary
+            wc.hashtags = hashtags
+        else:
+            wc = WeeklyContext(
+                week_of=week_of,
+                segment=segment,
+                raw_snippets=raw_snippets,
+                summary=summary,
+                hashtags=hashtags,
+            )
+            db.add(wc)
+        await db.commit()
+        logger.info(f"[weekly-intel] WeeklyContext salvo week_of={week_of} segment={segment!r}")

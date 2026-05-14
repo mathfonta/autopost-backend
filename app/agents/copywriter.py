@@ -12,6 +12,7 @@ Responsabilidades:
 import json
 import logging
 import os
+import re
 
 import anthropic
 
@@ -498,14 +499,42 @@ async def generate_copy_with_ai(
         approach = _RETRY_APPROACHES.get(retry_attempt, _RETRY_APPROACHES[3])
         retry_section = f"\n\n{approach}"
 
-    # Injeta contexto de tendências do nicho via Exa Search (Story 13.2)
+    # Injeta contexto de tendências do nicho via Exa Search (Story 13.2 + 13.3)
     exa_section = ""
+    exa_hashtag_candidates: list[str] = []
     if exa_context:
+        # Story 13.3: extrair hashtags explícitas do texto + derivar candidatas das bullet points
+        explicit_tags = re.findall(r'#(\w+)', exa_context)
+        bullet_terms = re.findall(r'•\s+(.+?)(?:\n|$)', exa_context)
+        derived_tags = []
+        for term in bullet_terms:
+            # Pega as primeiras 2 palavras significativas de cada bullet como candidata
+            words = [w.lower() for w in re.findall(r'\b[a-zA-ZÀ-ú]{4,}\b', term)]
+            if words:
+                derived_tags.append("".join(words[:2]))  # ex: "porcelanatogrande"
+        exa_hashtag_candidates = (
+            [t.lower() for t in explicit_tags[:5]]
+            + derived_tags[:5]
+        )
+
+        hashtags_block = ""
+        if exa_hashtag_candidates:
+            tags_str = " ".join(f"#{h}" for h in exa_hashtag_candidates[:8])
+            hashtags_block = (
+                f"\n\n#HASHTAGS_EM_ALTA (priorizar estas no bloco de hashtags):\n{tags_str}\n"
+                "Inclua ao menos 3 destas no JSON 'hashtags'. Complemente com seu próprio conhecimento até 20-25 tags."
+            )
+
         exa_section = (
             f"\n\n#TENDENCIAS_DO_NICHO (dados Exa, últimos 30 dias):\n{exa_context}\n"
-            "INSTRUÇÃO: Se houver #TENDENCIAS_DO_NICHO, use UMA referência sutil a tendências reais. "
+            "INSTRUÇÃO: Use UMA referência sutil a tendências reais. "
             "Não cite fontes nem URLs. Mantenha foco na obra/serviço da empresa."
+            f"{hashtags_block}"
         )
+
+    # Log de hashtags Exa para monitorar qualidade (AC6 Story 13.3)
+    if exa_hashtag_candidates:
+        logger.info(f"[copywriter] hashtags exa aproveitadas: {len(exa_hashtag_candidates)} candidatas injetadas")
 
     # Campos enriquecidos do analista (novos — podem estar ausentes em posts antigos)
     elementos = analysis_result.get("elementos_visuais", "")
