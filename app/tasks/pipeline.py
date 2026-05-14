@@ -69,6 +69,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "strategy": req.strategy,
             "user_context": req.user_context or None,
             "voice_tone": (client.voice_tone or "casual") if client else "casual",
+            "attack_sequence_position": (client.attack_sequence_position or 0) if client else 0,
             "retry_count": req.retry_count,
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
@@ -131,6 +132,21 @@ async def _get_request(request_id: str) -> ContentRequest:
         if not req:
             raise ValueError(f"ContentRequest {request_id} não encontrado")
         return req
+
+
+async def _increment_attack_sequence(client_id: str) -> None:
+    """Incrementa attack_sequence_position do cliente após publicação, capped em 10 (Story 14.2)."""
+    from app.core.database import WorkerSessionLocal
+    from app.models.client import Client
+
+    uid = uuid.UUID(client_id)
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(select(Client).where(Client.id == uid))
+        client = result.scalar_one_or_none()
+        if client and client.attack_sequence_position < 10:
+            client.attack_sequence_position = min(client.attack_sequence_position + 1, 10)
+            await db.commit()
+            logger.info(f"[publish_post] attack_sequence_position={client.attack_sequence_position} client_id={client_id}")
 
 
 async def _update_status(
@@ -305,6 +321,7 @@ def generate_copy(self, request_id: str) -> str:
                 user_context=req.get("user_context"),
                 voice_tone=req.get("voice_tone", "casual"),
                 exa_context=exa_context,
+                attack_sequence_position=req.get("attack_sequence_position"),
             )
         )
 
@@ -642,6 +659,9 @@ def publish_post(self, request_id: str) -> str:
             "has_instagram": bool(instagram_post_id),
             "has_facebook": bool(facebook_post_id),
         })
+
+        # Incrementa sequência de ataque (Story 14.2) — capped em 10
+        _run_sync(_increment_attack_sequence(req["client_id"]))
 
         # Agenda coleta de métricas 24h depois
         if instagram_post_id:

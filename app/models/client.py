@@ -55,6 +55,11 @@ class Client(Base):
         comment="Tom de voz do copywriter: formal | casual | technical",
     )
 
+    attack_sequence_position: Mapped[int] = mapped_column(
+        default=0, nullable=False, server_default="0",
+        comment="Posição na sequência de ataque editorial (Story 14.2) — 0 a 10",
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )

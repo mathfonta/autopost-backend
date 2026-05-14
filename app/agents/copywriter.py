@@ -302,6 +302,25 @@ Regras das hashtags:
 4. LINGUAGEM PARA DESCONHECIDOS: Escreva para quem decide em 2 segundos se fica ou sai. Sem jargão do nicho. Clareza vence autoridade. Um completo desconhecido deve entender o valor do conteúdo sem contexto prévio.
 """
 
+# Sequência de ataque editorial para clientes novos — Story 14.2
+_ATTACK_DIRECTIVES: dict[int, str] = {
+    0: "Foque em retenção: hook direto, sem jargão, entrega clara",
+    1: "Formato lista gera save automaticamente — use numeração",
+    2: "Opinião forte gera comentário — tome um lado claro",
+    3: "Imagem + texto curto aspiracional — filtra público certo",
+    4: "Visual de transformação incentiva replay — resultado claro",
+}
+_ATTACK_GOALS: dict[int, str] = {
+    0: "Retenção — teste inicial",
+    1: "Salvamentos",
+    2: "Comentários e shares",
+    3: "Qualificação de audiência",
+    4: "Replays + permanência",
+}
+_ATTACK_DEFAULT_DIRECTIVE = "Consolide os formatos de maior engajamento dos posts 1 a 5"
+_ATTACK_DEFAULT_GOAL = "Consolidação"
+
+
 _VOICE_TONE_MAP = {
     "formal":    "tom formal, profissional e aspiracional",
     "casual":    "tom descontraído, próximo e direto",
@@ -394,6 +413,7 @@ async def generate_copy_with_ai(
     voice_tone: str | None = None,
     retry_attempt: int = 0,
     exa_context: str | None = None,
+    attack_sequence_position: int | None = None,
 ) -> dict:
     """
     Gera legenda, hashtags e CTA para o post usando Claude Sonnet.
@@ -516,6 +536,18 @@ async def generate_copy_with_ai(
     viral_triggers = _VIRAL_TRIGGERS.get(segment_key, _VIRAL_TRIGGERS["default"])
     viral_section = f"\n\nGATILHOS VIRAIS DO NICHO — use um destes ângulos para o hook:\n{viral_triggers}"
 
+    # Injeta objetivo da sequência de ataque para clientes novos (Story 14.2)
+    attack_section = ""
+    if attack_sequence_position is not None and 0 <= attack_sequence_position < 10:
+        directive = _ATTACK_DIRECTIVES.get(attack_sequence_position, _ATTACK_DEFAULT_DIRECTIVE)
+        goal = _ATTACK_GOALS.get(attack_sequence_position, _ATTACK_DEFAULT_GOAL)
+        post_num = attack_sequence_position + 1
+        attack_section = (
+            f"\n\n#OBJETIVO_SEQUENCIA (post {post_num}/10 — {goal}):\n"
+            f"{directive}"
+        )
+        logger.info(f"[copywriter] sequência de ataque position={attack_sequence_position} post={post_num} goal={goal!r}")
+
     # Injeta abordagem forçada para garantir variação real no retry
     retry_section = ""
     if retry_attempt > 0:
@@ -583,7 +615,7 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}{attack_section}
 """
 
     logger.info(

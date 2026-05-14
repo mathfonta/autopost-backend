@@ -74,6 +74,7 @@ class ClientResponse(BaseModel):
     plan: str
     brand_profile: dict
     voice_tone: str | None = "casual"
+    attack_sequence_position: int = 0
     is_active: bool
 
     model_config = {"from_attributes": True}
