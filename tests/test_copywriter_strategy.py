@@ -14,6 +14,12 @@ from app.agents.copywriter import generate_copy_with_ai, STRATEGY_PROMPTS
 
 # ─── Helpers ────────────────────────────────────────────────────
 
+def _content_to_str(content) -> str:
+    """Extrai texto de content list (prompt caching) ou string."""
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return content or ""
+
 def _mock_claude_response() -> MagicMock:
     message = MagicMock()
     message.content = [MagicMock()]
@@ -104,7 +110,7 @@ async def test_strategy_injected_in_message():
         )
 
     assert captured_messages, "Nenhuma mensagem capturada"
-    user_msg = captured_messages[0]
+    user_msg = _content_to_str(captured_messages[0])
     assert "ESTRATÉGIA" in user_msg
     assert "Prova Social" in user_msg
 
@@ -129,8 +135,10 @@ async def test_strategy_none_no_injection():
             strategy=None,
         )
 
-    user_msg = captured_messages[0]
-    assert "ESTRATÉGIA:" not in user_msg
+    # Verifica apenas no bloco do user_message (último bloco), não na static library
+    content = captured_messages[0]
+    user_msg_text = content[-1].get("text", "") if isinstance(content, list) else (content or "")
+    assert "ESTRATÉGIA:" not in user_msg_text
 
 
 @pytest.mark.asyncio
@@ -173,7 +181,7 @@ async def test_carousel_antes_depois_strategy():
             strategy="antes_depois",
         )
 
-    user_msg = captured_messages[0]
+    user_msg = _content_to_str(captured_messages[0])
     assert "transformação" in user_msg.lower() or "Antes & Depois" in user_msg
 
 
@@ -197,5 +205,5 @@ async def test_reels_hook_choque_strategy():
             strategy="hook_choque",
         )
 
-    user_msg = captured_messages[0]
+    user_msg = _content_to_str(captured_messages[0])
     assert "Hook" in user_msg or "choque" in user_msg.lower()

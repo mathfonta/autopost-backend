@@ -13,6 +13,12 @@ from app.agents.copywriter import generate_copy_with_ai, MAX_CAPTION_LONG_CHARS 
 
 # ─── Helpers ────────────────────────────────────────────────────
 
+def _content_to_str(content) -> str:
+    """Extrai texto de content list (prompt caching) ou string."""
+    if isinstance(content, list):
+        return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return content or ""
+
 def _mock_claude_response(content: dict) -> MagicMock:
     message = MagicMock()
     message.content = [MagicMock()]
@@ -129,7 +135,7 @@ async def test_brand_profile_sent_to_claude():
         await generate_copy_with_ai(ANALYSIS, BRAND)
 
     assert captured
-    user_msg = captured[0]["messages"][0]["content"]
+    user_msg = _content_to_str(captured[0]["messages"][0]["content"])
     assert "construção civil" in user_msg.lower()
     assert "florianópolis" in user_msg.lower() or "florianopolis" in user_msg.lower()
 
@@ -150,7 +156,7 @@ async def test_analysis_description_sent_to_claude():
 
         await generate_copy_with_ai(ANALYSIS, BRAND)
 
-    user_msg = captured[0]["messages"][0]["content"]
+    user_msg = _content_to_str(captured[0]["messages"][0]["content"])
     assert "porcelanato" in user_msg.lower()
 
 
@@ -225,7 +231,7 @@ async def test_user_content_type_injected_in_prompt():
 
         await generate_copy_with_ai(ANALYSIS, BRAND, user_content_type="obra_concluida")
 
-    user_msg = captured[0]["messages"][0]["content"]
+    user_msg = _content_to_str(captured[0]["messages"][0]["content"])
     assert "INTENÇÃO DO CLIENTE" in user_msg
     assert CONTENT_TYPE_PROMPTS["obra_concluida"] in user_msg
 
@@ -246,8 +252,9 @@ async def test_no_intent_section_without_user_content_type():
 
         await generate_copy_with_ai(ANALYSIS, BRAND)
 
-    user_msg = captured[0]["messages"][0]["content"]
-    assert "INTENÇÃO DO CLIENTE" not in user_msg
+    content = captured[0]["messages"][0]["content"]
+    user_msg_text = content[-1].get("text", "") if isinstance(content, list) else (content or "")
+    assert "INTENÇÃO DO CLIENTE" not in user_msg_text
 
 
 @pytest.mark.asyncio
@@ -264,3 +271,49 @@ async def test_timeout_propagates():
 
         with pytest.raises(anthropic_lib.APITimeoutError):
             await generate_copy_with_ai(ANALYSIS, BRAND)
+
+
+# ─── Story 14.1 — Modo Engenharia: Diretrizes Algorítmicas ─────
+
+
+def test_system_prompt_contains_algorithmic_directives():
+    """System prompt deve conter as 4 palavras-chave das diretrizes algorítmicas (AC5 Story 14.1)."""
+    from app.agents.copywriter import _SYSTEM_PROMPT
+
+    prompt_lower = _SYSTEM_PROMPT.lower()
+    for keyword in ["hook", "salvar", "desconhecido", "retenção"]:
+        assert keyword in prompt_lower, f"Keyword '{keyword}' ausente no system prompt — AC5 Story 14.1"
+
+
+@pytest.mark.asyncio
+async def test_regra_zero_logs_when_context_missing(caplog):
+    """Regra Zero deve logar #AVISO_REGRA_ZERO quando user_context não tem público frio/objetivo (AC2 Story 14.1)."""
+    import logging
+
+    with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create = AsyncMock(return_value=_mock_claude_response(GOOD_RESPONSE))
+
+        with caplog.at_level(logging.DEBUG, logger="app.agents.copywriter"):
+            await generate_copy_with_ai(ANALYSIS, BRAND, user_context=None)
+
+    assert "#AVISO_REGRA_ZERO" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_regra_zero_no_log_when_context_complete(caplog):
+    """Regra Zero NÃO deve logar quando contexto tem público e objetivo (AC2 Story 14.1)."""
+    import logging
+
+    rich_context = "Público frio: donos de imóveis que querem reformar. Objetivo: atrair orçamentos."
+
+    with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create = AsyncMock(return_value=_mock_claude_response(GOOD_RESPONSE))
+
+        with caplog.at_level(logging.DEBUG, logger="app.agents.copywriter"):
+            await generate_copy_with_ai(ANALYSIS, BRAND, user_context=rich_context)
+
+    assert "#AVISO_REGRA_ZERO" not in caplog.text

@@ -288,6 +288,18 @@ Regras das hashtags:
 - Inclua hashtags do nicho (ex: #construcaocivil), da localização (ex: #florianopolis) e gerais (#instagram #brasil)
 - Sem o símbolo # no JSON — apenas a palavra
 - Todas em minúsculo, sem espaços, sem acentos
+
+#DIRETRIZES_ALGORITMICAS — MODO ENGENHARIA (aplicar em toda geração):
+
+1. HOOK SEM CONTEXTO: As 2 primeiras linhas devem funcionar para quem nunca viu o perfil. Gere curiosidade sem depender de autoridade prévia. O hook trabalha para um desconhecido total.
+   Certo: "Esse acabamento levou 3 dias. O resultado vai ficar para sempre." ✓
+   Errado: "A Construtora Silva entregou mais um projeto." ✗
+
+2. RETENÇÃO ACIMA DA MÉDIA: Elimine pausas mortas. Insira micro-curiosidades entre parágrafos. O ritmo visual deve incentivar releitura — cada linha puxa a próxima. A taxa de retenção depende de não desperdiçar nenhuma linha.
+
+3. SINAIS QUE ESCALAM: Estruture a copy para gerar salvamentos (listas, dicas práticas, referências) e compartilhamentos (opinião forte, identificação). Saves e shares escalam o alcance — não likes. Quando o formato permitir, inclua CTA orientado a salvar: "Salva esse post para quando precisar."
+
+4. LINGUAGEM PARA DESCONHECIDOS: Escreva para quem decide em 2 segundos se fica ou sai. Sem jargão do nicho. Clareza vence autoridade. Um completo desconhecido deve entender o valor do conteúdo sem contexto prévio.
 """
 
 _VOICE_TONE_MAP = {
@@ -427,6 +439,17 @@ async def generate_copy_with_ai(
         "outro":          "conteúdo diverso",
     }
     content_label = content_type_labels.get(content_type, content_type)
+
+    # Regra Zero: log interno se contexto não fornece os 4 campos essenciais
+    _rz_campos = {
+        "nicho": bool(segment and segment != "empresa"),
+        "tom": bool(tone or voice_tone),
+        "público frio": bool(user_context and any(w in (user_context or "").lower() for w in ("público", "persona", "frio", "audiência", "cliente"))),
+        "objetivo": bool(user_context and any(w in (user_context or "").lower() for w in ("objetivo", "meta", "resultado", "vender", "atrair", "engaj"))),
+    }
+    if not all(_rz_campos.values()):
+        _rz_ausentes = [k for k, v in _rz_campos.items() if not v]
+        logger.debug(f"[copywriter] #AVISO_REGRA_ZERO — campos ausentes no contexto: {_rz_ausentes}")
 
     # Injeta padrões do cérebro local (horário e CTA comprovados)
     patterns = read_patterns()
