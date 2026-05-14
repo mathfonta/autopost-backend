@@ -21,11 +21,6 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# ─── Diagnóstico de ambiente (remover após confirmar fix) ─────────────────────
-_raw_copy_provider = os.environ.get("COPY_PROVIDER", "NOT_IN_ENV")
-logger.info(f"[copywriter] RAW os.environ COPY_PROVIDER={_raw_copy_provider!r}")
-# ──────────────────────────────────────────────────────────────────────────────
-
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 2500
 MAX_CAPTION_LONG_CHARS = 1500
