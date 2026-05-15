@@ -513,8 +513,10 @@ async def generate_copy_with_ai(
             )
         if pure_context:
             user_context_section = (
-                f"\n\nCONTEXTO DO CLIENTE (use para enriquecer — não substitui o que você vê na foto):\n"
-                f"{pure_context}"
+                f"\n\nCONTEXTO FORNECIDO PELO CLIENTE — OBRIGATÓRIO USAR:\n"
+                f"{pure_context}\n"
+                f"INSTRUÇÃO: mencione explicitamente as informações acima na legenda. "
+                f"Não ignore nem resuma — o cliente escolheu fornecer esse contexto e espera vê-lo na copy."
             )
 
     # Injeta transcrição do áudio se disponível (Reels com narração)
