@@ -1,7 +1,7 @@
 """add exa_trends_context to content_requests
 
-Revision ID: a1b2c3d4e5f6
-Revises: f3a4b5c6d7e8
+Revision ID: e6f7a8b9c0d1
+Revises: d2e3f4a5b6c7
 Create Date: 2026-05-12 00:00:00.000000
 
 """
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, None] = 'f3a4b5c6d7e8'
+revision: str = 'e6f7a8b9c0d1'
+down_revision: Union[str, None] = 'd2e3f4a5b6c7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

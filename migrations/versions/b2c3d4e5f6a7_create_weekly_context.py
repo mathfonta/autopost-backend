@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 
 revision: str = 'b2c3d4e5f6a7'
-down_revision: Union[str, None] = 'a1b2c3d4e5f6'
+down_revision: Union[str, None] = 'e6f7a8b9c0d1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
