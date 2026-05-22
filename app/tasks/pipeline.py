@@ -975,3 +975,17 @@ async def _save_weekly_context(
             db.add(wc)
         await db.commit()
         logger.info(f"[weekly-intel] WeeklyContext salvo week_of={week_of} segment={segment!r}")
+
+
+# ─── Pipeline Chain ──────────────────────────────────────────────
+
+def start_content_pipeline(request_id: str) -> str:
+    """Inicia o pipeline Analista → Copywriter → Designer (fire-and-forget)."""
+    pipeline = chain(
+        analyze_photo.s(request_id),
+        generate_copy.s(),
+        prepare_design.s(),
+    )
+    result = pipeline.apply_async()
+    logger.info(f"[pipeline] iniciado request_id={request_id} task_id={result.id}")
+    return result.id
