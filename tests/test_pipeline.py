@@ -655,7 +655,8 @@ def test_publish_post_carousel_transitions_to_published():
         result = publish_post.run(rid)
 
     assert result == rid
-    assert ContentStatus.publishing in call_log
+    # publishing agora é setado atomicamente em _try_claim_publishing (mockado),
+    # não passa mais por _update_status
     assert ContentStatus.published in call_log
 
 
