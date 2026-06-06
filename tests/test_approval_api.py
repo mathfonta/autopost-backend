@@ -179,7 +179,7 @@ def test_reject_success():
     app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["status"] == ContentStatus.failed
+    assert response.json()["status"] == ContentStatus.rejected
 
 
 def test_reject_saves_reason():
