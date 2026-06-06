@@ -320,7 +320,16 @@ def test_publish_post_transitions_to_published():
     async def fake_ig(ig_id, token, image_url, caption):
         return _fake_ig_result()
 
+    async def fake_claim(request_id):
+        call_log.append(ContentStatus.publishing)
+        return True
+
+    async def fake_increment(client_id):
+        return None
+
     with (
+        patch("app.tasks.pipeline._try_claim_publishing", side_effect=fake_claim),
+        patch("app.tasks.pipeline._increment_attack_sequence", side_effect=fake_increment),
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
         patch("app.agents.publisher.publish_to_instagram", side_effect=fake_ig),
