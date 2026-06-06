@@ -535,7 +535,7 @@ async def generate_copy_with_ai(
 
     # Injeta objetivo da sequência de ataque para clientes novos (Story 14.2)
     attack_section = ""
-    if attack_sequence_position is not None and 0 <= attack_sequence_position <= 10:
+    if attack_sequence_position is not None and 0 <= attack_sequence_position < 10:
         directive = _ATTACK_DIRECTIVES.get(attack_sequence_position, _ATTACK_DEFAULT_DIRECTIVE)
         goal = _ATTACK_GOALS.get(attack_sequence_position, _ATTACK_DEFAULT_GOAL)
         post_num = attack_sequence_position + 1
