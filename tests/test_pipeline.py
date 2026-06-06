@@ -41,6 +41,7 @@ def _rid():
 def _fake_request_with_client():
     return {
         "id": str(uuid.uuid4()),
+        "client_id": str(uuid.uuid4()),
         "photo_url": "https://r2.example.com/photo.jpg",
         "photo_key": "uploads/photo.jpg",
         "brand_profile": {"segment": "construção", "city": "Florianópolis"},
