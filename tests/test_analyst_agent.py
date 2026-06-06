@@ -11,6 +11,28 @@ import pytest
 from app.agents.analyst import analyze_photo_with_ai, _QUALITY_MESSAGES
 
 
+@pytest.fixture(autouse=True)
+def mock_photo_http():
+    """Intercepta o download HTTP da foto — CI não tem acesso à internet."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.content = b"fake-image-bytes"
+
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(return_value=mock_response)
+    mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+    mock_http.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.agents.analyst.httpx.AsyncClient", MagicMock(return_value=mock_http)),
+        patch(
+            "app.agents.analyst._compress_image_for_claude",
+            return_value=(b"compressed", "image/jpeg"),
+        ),
+    ):
+        yield
+
+
 # ─── Helpers ────────────────────────────────────────────────────
 
 def _mock_claude_response(content: dict) -> MagicMock:
