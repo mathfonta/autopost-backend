@@ -464,7 +464,7 @@ async def generate_copy_with_ai(
     }
     if not all(_rz_campos.values()):
         _rz_ausentes = [k for k, v in _rz_campos.items() if not v]
-        logger.debug(f"[copywriter] #AVISO_REGRA_ZERO — campos ausentes no contexto: {_rz_ausentes}")
+        logger.warning(f"[copywriter] #AVISO_REGRA_ZERO — campos ausentes no contexto: {_rz_ausentes}")
 
     # Injeta padrões do cérebro local (horário e CTA comprovados)
     patterns = read_patterns()
