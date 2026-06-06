@@ -48,17 +48,6 @@ async def get_weekly_insight(
     weekly = result.scalar_one_or_none()
 
     if weekly is None:
-        # Fallback: tenta buscar da semana atual independente do segmento
-        monday = _current_monday()
-        stmt_any = (
-            select(WeeklyContext)
-            .order_by(desc(WeeklyContext.week_of))
-            .limit(1)
-        )
-        result_any = await db.execute(stmt_any)
-        weekly = result_any.scalar_one_or_none()
-
-    if weekly is None:
         raise HTTPException(
             status_code=404,
             detail="Nenhuma inteligência de mercado disponível ainda. "
@@ -81,9 +70,10 @@ async def get_streak(
     Retorna streak de dias consecutivos e progresso semanal do client autenticado.
     Conta apenas posts com status = 'published'.
     """
-    stmt = select(ContentRequest.updated_at).where(
+    stmt = select(ContentRequest.published_at).where(
         ContentRequest.client_id == current_client.id,
         ContentRequest.status == ContentStatus.published,
+        ContentRequest.published_at.is_not(None),
     )
     result = await db.execute(stmt)
     published_dates: set[date] = {row[0].date() for row in result.fetchall()}

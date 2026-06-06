@@ -535,7 +535,7 @@ async def generate_copy_with_ai(
 
     # Injeta objetivo da sequência de ataque para clientes novos (Story 14.2)
     attack_section = ""
-    if attack_sequence_position is not None and 0 <= attack_sequence_position < 10:
+    if attack_sequence_position is not None and 0 <= attack_sequence_position <= 10:
         directive = _ATTACK_DIRECTIVES.get(attack_sequence_position, _ATTACK_DEFAULT_DIRECTIVE)
         goal = _ATTACK_GOALS.get(attack_sequence_position, _ATTACK_DEFAULT_GOAL)
         post_num = attack_sequence_position + 1
@@ -561,7 +561,7 @@ async def generate_copy_with_ai(
         derived_tags = []
         for term in bullet_terms:
             # Pega as primeiras 2 palavras significativas de cada bullet como candidata
-            words = [w.lower() for w in re.findall(r'\b[a-zA-ZÀ-ú]{4,}\b', term)]
+            words = [w.lower() for w in re.findall(r'\b[a-zA-ZÀ-ÖØ-öø-ÿ]{4,}\b', term)]
             if words:
                 derived_tags.append("".join(words[:2]))  # ex: "porcelanatogrande"
         exa_hashtag_candidates = (

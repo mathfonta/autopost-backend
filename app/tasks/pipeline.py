@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from celery import chain
 from celery.schedules import crontab
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.tasks import celery_app
 from app.models.content_request import ContentRequest, ContentStatus
@@ -71,6 +71,7 @@ async def _get_request_with_client(request_id: str) -> dict:
             "voice_tone": (client.voice_tone or "casual") if client else "casual",
             "attack_sequence_position": (client.attack_sequence_position or 0) if client else 0,
             "retry_count": req.retry_count,
+            "exa_trends_context": req.exa_trends_context or None,
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
             "instagram_business_id": (client.instagram_business_id or "") if client else "",
@@ -134,6 +135,26 @@ async def _get_request(request_id: str) -> ContentRequest:
         return req
 
 
+async def _try_claim_publishing(request_id: str) -> bool:
+    """Atomicamente seta status para 'publishing'. Retorna False se já publicado/publicando."""
+    from app.core.database import WorkerSessionLocal
+
+    uid = uuid.UUID(request_id)
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(
+            update(ContentRequest)
+            .where(
+                ContentRequest.id == uid,
+                ContentRequest.status.not_in(
+                    [ContentStatus.published, ContentStatus.publishing]
+                ),
+            )
+            .values(status=ContentStatus.publishing)
+        )
+        await db.commit()
+        return result.rowcount > 0
+
+
 async def _increment_attack_sequence(client_id: str) -> None:
     """Incrementa attack_sequence_position do cliente após publicação, capped em 10 (Story 14.2)."""
     from app.core.database import WorkerSessionLocal
@@ -171,6 +192,8 @@ async def _update_status(
             raise ValueError(f"ContentRequest {request_id} não encontrado")
 
         req.status = status
+        if status == ContentStatus.published and req.published_at is None:
+            req.published_at = datetime.now(timezone.utc)
         if error:
             req.error_message = error
         if celery_task_id:
@@ -373,6 +396,8 @@ def retry_generate_copy(self, request_id: str) -> str:
                 user_context=req.get("user_context"),
                 voice_tone=req.get("voice_tone", "casual"),
                 retry_attempt=req.get("retry_count", 1),
+                exa_context=req.get("exa_trends_context"),
+                attack_sequence_position=req.get("attack_sequence_position"),
             )
         )
 
@@ -533,13 +558,11 @@ def publish_post(self, request_id: str) -> str:
     logger.info(f"[publish_post] request_id={request_id}")
 
     try:
-        # Idempotência: se já foi publicado (ex: retry após crash de worker), evita duplicata no Instagram
-        req_check = _run_sync(_get_request(request_id))
-        if req_check.status == ContentStatus.published:
-            logger.info(f"[publish_post] já publicado — idempotência request_id={request_id}")
+        # Idempotência atômica: claim via UPDATE WHERE status NOT IN (published, publishing)
+        # Evita race condition entre workers Celery concorrentes
+        if not _run_sync(_try_claim_publishing(request_id)):
+            logger.info(f"[publish_post] já publicado/publicando — idempotência request_id={request_id}")
             return request_id
-
-        _run_sync(_update_status(request_id, ContentStatus.publishing))
 
         req = _run_sync(_get_request_with_client(request_id))
         from app.core.storage import generate_presigned_url
@@ -660,8 +683,9 @@ def publish_post(self, request_id: str) -> str:
             "has_facebook": bool(facebook_post_id),
         })
 
-        # Incrementa sequência de ataque (Story 14.2) — capped em 10
-        _run_sync(_increment_attack_sequence(req["client_id"]))
+        # Incrementa sequência de ataque apenas quando um post foi publicado de fato
+        if instagram_post_id or facebook_post_id:
+            _run_sync(_increment_attack_sequence(req["client_id"]))
 
         # Agenda coleta de métricas 24h depois
         if instagram_post_id:
