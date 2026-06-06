@@ -39,8 +39,7 @@ jobs:
           path: pip-audit-results.json
           retention-days: 30
 
-      - name: Fail on CRITICAL vulnerabilities
+      - name: Fail on any vulnerabilities
         run: |
           pip-audit --requirement requirements.txt \
-            --progress-spinner off \
-            --fail-on CRITICAL
+            --progress-spinner off

@@ -19,6 +19,24 @@ from app.tasks.pipeline import (
 from app.agents.publisher import publish_carousel_to_instagram
 
 
+@pytest.fixture(autouse=True)
+def _mock_publish_post_db_calls():
+    """publish_post chama _try_claim_publishing e _increment_attack_sequence
+    que usam DB real. Mockamos globalmente para todos os testes do arquivo
+    não tentarem conectar no Postgres."""
+    async def fake_claim(request_id):
+        return True
+
+    async def fake_increment(client_id):
+        return None
+
+    with (
+        patch("app.tasks.pipeline._try_claim_publishing", side_effect=fake_claim),
+        patch("app.tasks.pipeline._increment_attack_sequence", side_effect=fake_increment),
+    ):
+        yield
+
+
 # ─── Helpers ────────────────────────────────────────────────────
 
 def _fake_request(status=ContentStatus.pending):
@@ -41,6 +59,7 @@ def _rid():
 def _fake_request_with_client():
     return {
         "id": str(uuid.uuid4()),
+        "client_id": str(uuid.uuid4()),
         "photo_url": "https://r2.example.com/photo.jpg",
         "photo_key": "uploads/photo.jpg",
         "brand_profile": {"segment": "construção", "city": "Florianópolis"},
@@ -320,7 +339,16 @@ def test_publish_post_transitions_to_published():
     async def fake_ig(ig_id, token, image_url, caption):
         return _fake_ig_result()
 
+    async def fake_claim(request_id):
+        call_log.append(ContentStatus.publishing)
+        return True
+
+    async def fake_increment(client_id):
+        return None
+
     with (
+        patch("app.tasks.pipeline._try_claim_publishing", side_effect=fake_claim),
+        patch("app.tasks.pipeline._increment_attack_sequence", side_effect=fake_increment),
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
         patch("app.agents.publisher.publish_to_instagram", side_effect=fake_ig),
@@ -627,7 +655,8 @@ def test_publish_post_carousel_transitions_to_published():
         result = publish_post.run(rid)
 
     assert result == rid
-    assert ContentStatus.publishing in call_log
+    # publishing agora é setado atomicamente em _try_claim_publishing (mockado),
+    # não passa mais por _update_status
     assert ContentStatus.published in call_log
 
 

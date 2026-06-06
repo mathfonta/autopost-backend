@@ -464,7 +464,7 @@ async def generate_copy_with_ai(
     }
     if not all(_rz_campos.values()):
         _rz_ausentes = [k for k, v in _rz_campos.items() if not v]
-        logger.debug(f"[copywriter] #AVISO_REGRA_ZERO — campos ausentes no contexto: {_rz_ausentes}")
+        logger.warning(f"[copywriter] #AVISO_REGRA_ZERO — campos ausentes no contexto: {_rz_ausentes}")
 
     # Injeta padrões do cérebro local (horário e CTA comprovados)
     patterns = read_patterns()
@@ -561,7 +561,7 @@ async def generate_copy_with_ai(
         derived_tags = []
         for term in bullet_terms:
             # Pega as primeiras 2 palavras significativas de cada bullet como candidata
-            words = [w.lower() for w in re.findall(r'\b[a-zA-ZÀ-ú]{4,}\b', term)]
+            words = [w.lower() for w in re.findall(r'\b[a-zA-ZÀ-ÖØ-öø-ÿ]{4,}\b', term)]
             if words:
                 derived_tags.append("".join(words[:2]))  # ex: "porcelanatogrande"
         exa_hashtag_candidates = (

@@ -18,3 +18,17 @@ os.environ.setdefault("CLOUDFLARE_R2_ACCESS_KEY", "test-access-key")
 os.environ.setdefault("CLOUDFLARE_R2_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("CLOUDFLARE_R2_ENDPOINT", "https://test.r2.cloudflarestorage.com")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset slowapi in-memory storage before each test.
+
+    All TestClient requests share the IP "testclient". Without this reset the
+    11th+ POST to /content-requests hits the 10/hour rate limit and the
+    endpoint returns 429 before reaching upload_to_r2, causing tests that
+    assert mock.called to fail spuriously.
+    """
+    from app.core.limiter import limiter
+    limiter._storage.reset()
+    yield

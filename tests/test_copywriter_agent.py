@@ -286,26 +286,23 @@ def test_system_prompt_contains_algorithmic_directives():
 
 
 @pytest.mark.asyncio
-async def test_regra_zero_logs_when_context_missing(caplog):
+async def test_regra_zero_logs_when_context_missing():
     """Regra Zero deve logar #AVISO_REGRA_ZERO quando user_context não tem público frio/objetivo (AC2 Story 14.1)."""
-    import logging
-
     with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
         mock_client = AsyncMock()
         mock_cls.return_value = mock_client
         mock_client.messages.create = AsyncMock(return_value=_mock_claude_response(GOOD_RESPONSE))
 
-        with caplog.at_level(logging.DEBUG, logger="app.agents.copywriter"):
+        with patch("app.agents.copywriter.logger") as mock_logger:
             await generate_copy_with_ai(ANALYSIS, BRAND, user_context=None)
 
-    assert "#AVISO_REGRA_ZERO" in caplog.text
+    warning_text = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+    assert "#AVISO_REGRA_ZERO" in warning_text
 
 
 @pytest.mark.asyncio
-async def test_regra_zero_no_log_when_context_complete(caplog):
+async def test_regra_zero_no_log_when_context_complete():
     """Regra Zero NÃO deve logar quando contexto tem público e objetivo (AC2 Story 14.1)."""
-    import logging
-
     rich_context = "Público frio: donos de imóveis que querem reformar. Objetivo: atrair orçamentos."
 
     with patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_cls:
@@ -313,7 +310,8 @@ async def test_regra_zero_no_log_when_context_complete(caplog):
         mock_cls.return_value = mock_client
         mock_client.messages.create = AsyncMock(return_value=_mock_claude_response(GOOD_RESPONSE))
 
-        with caplog.at_level(logging.DEBUG, logger="app.agents.copywriter"):
+        with patch("app.agents.copywriter.logger") as mock_logger:
             await generate_copy_with_ai(ANALYSIS, BRAND, user_context=rich_context)
 
-    assert "#AVISO_REGRA_ZERO" not in caplog.text
+    warning_text = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+    assert "#AVISO_REGRA_ZERO" not in warning_text

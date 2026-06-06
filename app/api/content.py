@@ -93,7 +93,7 @@ async def submit_photo(
     photos: list[UploadFile] | None = File(None),
     content_type: str | None = Form(None),
     strategy: str | None = Form(None),
-    user_context: str | None = Form(None),
+    user_context: str | None = Form(None, max_length=2000),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
@@ -458,7 +458,7 @@ async def reject_content_request(
 
     reason = body.reason if body and body.reason else None
     req.status = ContentStatus.rejected
-    req.error_message = reason or None
+    req.error_message = reason or "Rejeitado pelo cliente"
     await db.commit()
 
     logger.info(f"[content] rejeitado id={req.id}")
