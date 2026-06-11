@@ -49,7 +49,7 @@ PRESIGNED_URL_TTL = 3600  # 1 hora
 VALID_CONTENT_TYPES = {
     # Formatos Instagram (v2 — genérico)
     "feed_photo", "carousel", "reels", "story",
-    # Tipos legados Espectra (retrocompatibilidade)
+    # Tipos legados de conteúdo (retrocompatibilidade)
     "post_simples", "obra_andamento", "obra_concluida", "engajamento", "bastidores",
     # Tipos especiais multi-foto
     "before_after",

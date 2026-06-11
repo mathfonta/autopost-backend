@@ -174,13 +174,18 @@ def _normalize_segment(segment: str) -> str:
 @router.get("/themes")
 async def list_themes(
     current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Retorna temas de carrossel para o nicho do client autenticado."""
+    """
+    Retorna temas de carrossel para o nicho do client autenticado.
+    Temas não usados aparecem primeiro; temas já publicados ficam por último.
+    Multi-tenant: filtra exclusivamente pelo business_segment do brand_profile.
+    """
     brand_profile = current_client.brand_profile or {}
-    raw_segment = brand_profile.get("segment", "")
-    normalized = _normalize_segment(raw_segment)
+    raw_segment   = brand_profile.get("segment", "")
+    normalized    = _normalize_segment(raw_segment)
 
-    # Tenta matching exato normalizado
+    # Matching por segmento do cliente (multi-tenant, sem hardcoding)
     matched_key = None
     for key in THEME_LIBRARY:
         if key == "default":
@@ -189,12 +194,107 @@ async def list_themes(
             matched_key = key
             break
 
-    if matched_key:
-        themes = THEME_LIBRARY[matched_key]
-        segment_display = matched_key
-    else:
-        # Fallback: temas default
-        themes = THEME_LIBRARY["default"]
-        segment_display = raw_segment or "geral"
+    base_themes     = THEME_LIBRARY[matched_key] if matched_key else THEME_LIBRARY["default"]
+    segment_display = matched_key if matched_key else (raw_segment or "geral")
 
-    return {"segment": segment_display, "themes": themes}
+    # Conta uso de cada tema por este cliente (apenas posts publicados)
+    usage_result = await db.execute(
+        select(ContentRequest.theme_id, func.count().label("cnt"))
+        .where(
+            ContentRequest.client_id == current_client.id,
+            ContentRequest.theme_id.isnot(None),
+            ContentRequest.status == ContentStatus.published,
+        )
+        .group_by(ContentRequest.theme_id)
+    )
+    usage_map: dict[str, int] = {row.theme_id: row.cnt for row in usage_result}
+
+    # Enriquece temas com contagem e ordena: unused (0) primeiro
+    enriched = [
+        {**t, "used_count": usage_map.get(t["id"], 0)}
+        for t in base_themes
+    ]
+    enriched.sort(key=lambda t: t["used_count"])
+
+    logger.info(
+        f"[themes] client={current_client.id} segment={segment_display!r} "
+        f"total={len(enriched)} unused={sum(1 for t in enriched if t['used_count'] == 0)}"
+    )
+
+    return {"segment": segment_display, "themes": enriched}
+
+
+# ─── GET /insights/strategy-recommendation ───────────────────────────────────
+
+# Fallback hardcoded (Story 18.2) — usado quando não há histórico suficiente
+_FALLBACK_RECOMMENDATION: dict[str, dict[str, str]] = {
+    "gerar_orcamentos":    {"feed_photo": "prova_social",         "carousel": "case_estudo",   "reels": "depoimento_video",      "story": "cta_link"},
+    "ganhar_seguidores":   {"feed_photo": "ancora_de_marca",      "carousel": "erros_mitos",   "reels": "hook_choque",           "story": "repost_feed"},
+    "aumentar_engajamento":{"feed_photo": "curiosidade_pergunta", "carousel": "comparativo",   "reels": "trend_nicho",           "story": "caixa_perguntas"},
+    "construir_autoridade":{"feed_photo": "bastidores",           "carousel": "passo_a_passo", "reels": "tutorial_pov",          "story": "bastidores_dia"},
+    "manter_ativo":        {"feed_photo": "hero_shot",            "carousel": "checklist",     "reels": "bastidores_autenticos", "story": "bastidores_dia"},
+}
+
+_MIN_HISTORY = 3  # mínimo de posts publicados neste formato para usar dados reais
+
+
+@router.get("/strategy-recommendation")
+async def get_strategy_recommendation(
+    intent: str,
+    format: str,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retorna a estratégia recomendada para a combinação intent+formato.
+
+    Lógica data-driven (Story 18.2):
+    1. Busca posts publicados deste cliente com o formato solicitado
+    2. Conta estratégias usadas — a mais frequente indica preferência validada
+    3. Se histórico >= MIN_HISTORY posts no formato: usa a estratégia mais usada
+    4. Fallback: retorna a recomendação editorial hardcoded
+    """
+    fallback_by_format = _FALLBACK_RECOMMENDATION.get(intent, {})
+    fallback_strategy  = fallback_by_format.get(format)
+
+    if not fallback_strategy:
+        raise HTTPException(status_code=422, detail=f"intent ou format inválido: {intent!r} / {format!r}")
+
+    # Histórico de posts publicados neste formato
+    history_result = await db.execute(
+        select(ContentRequest.strategy, func.count().label("cnt"))
+        .where(
+            ContentRequest.client_id   == current_client.id,
+            ContentRequest.content_type == format,
+            ContentRequest.status       == ContentStatus.published,
+            ContentRequest.strategy.isnot(None),
+        )
+        .group_by(ContentRequest.strategy)
+        .order_by(desc("cnt"))
+    )
+    rows = history_result.fetchall()
+    total_in_format = sum(r.cnt for r in rows)
+
+    if total_in_format >= _MIN_HISTORY and rows:
+        # Usa a estratégia mais publicada neste formato como recomendação
+        top_strategy = rows[0].strategy
+        source       = "history"
+        logger.info(
+            f"[recommendation] client={current_client.id} intent={intent!r} format={format!r} "
+            f"→ {top_strategy!r} (data-driven, {total_in_format} posts)"
+        )
+    else:
+        top_strategy = fallback_strategy
+        source       = "editorial"
+        logger.info(
+            f"[recommendation] client={current_client.id} intent={intent!r} format={format!r} "
+            f"→ {top_strategy!r} (fallback editorial, apenas {total_in_format} posts no formato)"
+        )
+
+    return {
+        "intent":    intent,
+        "format":    format,
+        "strategy":  top_strategy,
+        "source":    source,
+        "history_count": total_in_format,
+    }
