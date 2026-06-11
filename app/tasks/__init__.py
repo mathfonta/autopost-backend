@@ -12,7 +12,7 @@ celery_app = Celery(
     "autopost",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.pipeline"],
+    include=["app.tasks.pipeline", "app.tasks.pipeline_autonomous"],
 )
 
 # ─── Celery Beat — tarefas agendadas ─────────────────────────────────────────
