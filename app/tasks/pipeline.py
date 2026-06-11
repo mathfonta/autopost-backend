@@ -68,6 +68,8 @@ async def _get_request_with_client(request_id: str) -> dict:
             "content_type": req.content_type,
             "strategy": req.strategy,
             "user_context": req.user_context or None,
+            "marketing_intent": req.marketing_intent or None,
+            "theme_id": req.theme_id or None,
             "voice_tone": (client.voice_tone or "casual") if client else "casual",
             "attack_sequence_position": (client.attack_sequence_position or 0) if client else 0,
             "retry_count": req.retry_count,
@@ -322,6 +324,7 @@ def generate_copy(self, request_id: str) -> str:
                 voice_tone=req.get("voice_tone", "casual"),
                 exa_context=exa_context,
                 attack_sequence_position=req.get("attack_sequence_position"),
+                marketing_intent=req.get("marketing_intent"),
             )
         )
 

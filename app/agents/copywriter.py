@@ -68,6 +68,14 @@ CONTENT_TYPE_PROMPTS = {
     "carousel":        "Série de imagens mostrando o trabalho. Tom: narrativa visual, conte a história.",
 }
 
+INTENT_CONTEXT_PROMPTS: dict[str, str] = {
+    "gerar_orcamentos":     "INTENÇÃO DO POST: Converter visitantes em orçamentos. Priorize CTA direto para contato no final.",
+    "ganhar_seguidores":    "INTENÇÃO DO POST: Atrair novos seguidores. Priorize hook de alcance amplo e CTA de seguir.",
+    "aumentar_engajamento": "INTENÇÃO DO POST: Gerar comentários e salvamentos. Encerre com pergunta ou convite explícito.",
+    "construir_autoridade": "INTENÇÃO DO POST: Posicionar como especialista. Demonstre conhecimento técnico e específico.",
+    "manter_ativo":         "INTENÇÃO DO POST: Presença consistente. Tom leve, produção simples, foco no relacionamento.",
+}
+
 # Skill Library — 23 instruções de prompt por combinação formato+estratégia (Story 9.2)
 STRATEGY_PROMPTS: dict[str, str] = {
     # ── Feed Photo (5) ──────────────────────────────────────────────
@@ -409,6 +417,7 @@ async def generate_copy_with_ai(
     retry_attempt: int = 0,
     exa_context: str | None = None,
     attack_sequence_position: int | None = None,
+    marketing_intent: str | None = None,
 ) -> dict:
     """
     Gera legenda, hashtags e CTA para o post usando Claude Sonnet.
@@ -474,6 +483,12 @@ async def generate_copy_with_ai(
             f"\n\nPADRÕES COMPROVADOS PARA ESTE CLIENTE:\n{patterns}\n\n"
             "Use o horário e CTA sugeridos pelos padrões como referência prioritária."
         )
+
+    # Injeta intenção de marketing (Story 16.1) — precede a sub-estratégia
+    marketing_intent_section = ""
+    if marketing_intent and marketing_intent in INTENT_CONTEXT_PROMPTS:
+        marketing_intent_section = f"\n\n{INTENT_CONTEXT_PROMPTS[marketing_intent]}"
+        logger.info(f"[copywriter] marketing_intent={marketing_intent!r} injetado no prompt")
 
     # Injeta sub-estratégia da Skill Library (Story 9.2) — tem precedência sobre content_type legado
     strategy_section = ""
@@ -612,7 +627,7 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}{attack_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{marketing_intent_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}{attack_section}
 """
 
     logger.info(

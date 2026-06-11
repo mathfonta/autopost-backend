@@ -40,6 +40,7 @@ class ContentRequestDetailResponse(BaseModel):
     content_type: str | None = None
     strategy: str | None = None
     user_context: str | None = None
+    marketing_intent: str | None = None
     caption_long: str | None = None
     caption_short: str | None = None
     caption_stories: str | None = None

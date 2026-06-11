@@ -11,6 +11,7 @@ import logging
 from math import ceil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from app.core.storage import upload_to_r2, generate_presigned_url
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
 from app.tasks.pipeline import start_content_pipeline, publish_post, retry_generate_copy
+from app.tasks.pipeline_autonomous import start_autonomous_pipeline
 from app.schemas.content import (
     ApproveResponse,
     ContentRequestDetailResponse,
@@ -51,6 +53,8 @@ VALID_CONTENT_TYPES = {
     "post_simples", "obra_andamento", "obra_concluida", "engajamento", "bastidores",
     # Tipos especiais multi-foto
     "before_after",
+    # Carrossel autônomo (Epic 17 — sem upload de foto)
+    "autonomous_carousel",
 }
 MULTI_PHOTO_TYPES = {"before_after", "carousel"}
 
@@ -94,6 +98,7 @@ async def submit_photo(
     content_type: str | None = Form(None),
     strategy: str | None = Form(None),
     user_context: str | None = Form(None),
+    marketing_intent: str | None = Form(None),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
@@ -181,6 +186,7 @@ async def submit_photo(
         content_type=content_type,
         strategy=strategy or None,
         user_context=user_context or None,
+        marketing_intent=marketing_intent or None,
     )
     db.add(req)
     await db.commit()
@@ -193,6 +199,56 @@ async def submit_photo(
     await db.refresh(req)
 
     logger.info(f"[content] request criado id={req.id} n_photos={n} task_id={task_id}")
+    return req
+
+
+# ─── POST /content-requests/autonomous ─────────────────────────
+
+class AutonomousCarouselCreate(BaseModel):
+    theme_id: str
+    marketing_intent: str | None = None
+
+
+@router.post("/autonomous", response_model=ContentRequestResponse, status_code=201)
+@limiter.limit("5/hour")
+async def create_autonomous_carousel(
+    request: Request,
+    body: AutonomousCarouselCreate,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cria um carrossel autônomo baseado em tema da biblioteca.
+    Não requer upload de foto — o pipeline gera as imagens.
+    """
+    from app.data.theme_library import THEME_LIBRARY
+    all_themes = {t["id"]: t for themes in THEME_LIBRARY.values() for t in themes}
+    if body.theme_id not in all_themes:
+        raise HTTPException(status_code=422, detail=f"Tema '{body.theme_id}' não encontrado.")
+
+    req = ContentRequest(
+        id=uuid.uuid4(),
+        client_id=current_client.id,
+        photo_key="",
+        photo_url="",
+        photo_keys=[],
+        photo_urls=[],
+        source_channel="app",
+        status=ContentStatus.pending,
+        content_type="autonomous_carousel",
+        theme_id=body.theme_id,
+        marketing_intent=body.marketing_intent or None,
+    )
+    db.add(req)
+    await db.commit()
+    await db.refresh(req)
+
+    task_id = start_autonomous_pipeline(str(req.id))
+    req.celery_task_id = task_id
+    await db.commit()
+    await db.refresh(req)
+
+    logger.info(f"[content] carrossel autônomo criado id={req.id} theme_id={body.theme_id}")
     return req
 
 

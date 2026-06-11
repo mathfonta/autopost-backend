@@ -113,6 +113,18 @@ class ContentRequest(Base, TenantMixin):
         comment="Variação escolhida: long | short | stories"
     )
 
+    # ─── Intenção de marketing (Epic 16) ────────────────────────
+    marketing_intent: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="Intenção de marketing selecionada pelo cliente (Story 16.1): gerar_orcamentos | ganhar_seguidores | etc."
+    )
+
+    # ─── Carrossel autônomo (Epic 17) ────────────────────────────
+    theme_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True,
+        comment="ID do tema da biblioteca (Story 17.2): ex. cc_erros_reforma"
+    )
+
     # ─── Inteligência externa (Epic 13) ─────────────────────────
     exa_trends_context: Mapped[str | None] = mapped_column(
         Text, nullable=True,
