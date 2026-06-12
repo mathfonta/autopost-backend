@@ -40,7 +40,12 @@ async def get_current_client(
     client = result.scalar_one_or_none()
 
     if not client:
-        client = Client(id=uuid.UUID(str(user_id)))
+        email = getattr(response.user, "email", "") or ""
+        client = Client(
+            id=uuid.UUID(str(user_id)),
+            email=email,
+            name=email.split("@")[0] if email else "Usuário",
+        )
         db.add(client)
         await db.commit()
         await db.refresh(client)
