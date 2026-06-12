@@ -32,13 +32,23 @@ MAX_TOKENS = 1024
 CLAUDE_MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 
+def _detect_media_type(data: bytes) -> str:
+    if data[:4] == b'\x89PNG':
+        return "image/png"
+    if data[:4] in (b'GIF8', b'GIF9'):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return "image/webp"
+    return "image/jpeg"
+
+
 def _compress_image_for_claude(img_bytes: bytes) -> tuple[bytes, str]:
     """Comprime/redimensiona imagem para caber no limite de 5 MB da API Claude."""
     from io import BytesIO
     from PIL import Image
 
     if len(img_bytes) <= CLAUDE_MAX_IMAGE_BYTES:
-        return img_bytes, "image/jpeg"
+        return img_bytes, _detect_media_type(img_bytes)
 
     img = Image.open(BytesIO(img_bytes))
     if img.mode not in ("RGB", "L"):
