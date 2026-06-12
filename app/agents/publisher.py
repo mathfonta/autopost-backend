@@ -29,7 +29,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 GRAPH_API_VERSION = "v21.0"
-GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+GRAPH_BASE = f"https://graph.instagram.com/{GRAPH_API_VERSION}"
 TIMEOUT = 30.0
 
 
