@@ -6,10 +6,14 @@ GET /meta/callback   → troca code por Long-Lived Token e salva IDs no Client
 GET /meta/status     → retorna status da conexão e dados da conta
 """
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,4 +187,73 @@ async def meta_refresh(
         "renewed": True,
         "token_expires_at": new_expires_at.isoformat(),
         "days_until_expiry": 60,
+    }
+
+
+# ─── POST /meta/data-deletion ────────────────────────────────────
+# Obrigatório pelo Instagram Login (Meta App Review).
+# Chamado quando usuário remove o app via instagram.com → Configurações → Apps e sites.
+
+@router.post("/data-deletion")
+async def meta_data_deletion(
+    signed_request: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Callback de deleção de dados exigido pela Meta.
+    Recebe signed_request, valida assinatura, remove tokens do cliente.
+    Retorna URL de confirmação e código de rastreamento.
+    """
+    settings = get_settings()
+
+    # Decodifica e valida o signed_request
+    try:
+        parts = signed_request.split(".", 1)
+        if len(parts) != 2:
+            raise ValueError("formato inválido")
+
+        encoded_sig, payload_b64 = parts
+
+        # Normaliza base64url → base64 padrão
+        def _b64_decode(s: str) -> bytes:
+            s += "=" * (-len(s) % 4)
+            return base64.urlsafe_b64decode(s)
+
+        sig = _b64_decode(encoded_sig)
+        payload_bytes = _b64_decode(payload_b64)
+
+        # Verifica assinatura HMAC-SHA256
+        expected = hmac.new(
+            settings.INSTAGRAM_APP_SECRET.encode(),
+            payload_bytes,
+            hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(sig, expected):
+            raise ValueError("assinatura inválida")
+
+        payload = json.loads(payload_bytes)
+        ig_user_id = str(payload.get("user_id", ""))
+    except Exception as exc:
+        logger.warning(f"[meta/data-deletion] signed_request inválido: {exc}")
+        raise HTTPException(status_code=400, detail="signed_request inválido.")
+
+    # Remove token da conta Instagram associada ao ig_user_id
+    result = await db.execute(
+        select(Client).where(Client.instagram_business_id == ig_user_id)
+    )
+    client = result.scalar_one_or_none()
+    if client:
+        client.meta_access_token = None
+        client.meta_token_expires_at = None
+        await db.commit()
+        logger.info(f"[meta/data-deletion] token removido ig_user_id={ig_user_id} client_id={client.id}")
+    else:
+        logger.info(f"[meta/data-deletion] ig_user_id={ig_user_id} não encontrado — nenhuma ação necessária")
+
+    # Retorna URL de status e código de confirmação (exigido pela Meta)
+    confirmation_code = hashlib.sha256(f"{ig_user_id}-deleted".encode()).hexdigest()[:16]
+    frontend_url = settings.FRONTEND_URL.rstrip("/")
+    return {
+        "url": f"{frontend_url}/privacy#data-deletion",
+        "confirmation_code": confirmation_code,
     }
