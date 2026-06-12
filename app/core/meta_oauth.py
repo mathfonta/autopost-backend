@@ -1,6 +1,5 @@
 """
-Helpers para OAuth Meta (Facebook / Instagram).
-Funções auxiliares para geração de state JWT, troca de tokens e busca de IDs.
+Helpers para OAuth Instagram (API direta — sem Facebook Login).
 """
 
 from datetime import datetime, timezone, timedelta
@@ -9,14 +8,11 @@ import httpx
 from fastapi import HTTPException
 from jose import JWTError, jwt
 
-GRAPH_BASE = "https://graph.facebook.com/v21.0"
-OAUTH_DIALOG = "https://www.facebook.com/v21.0/dialog/oauth"
-OAUTH_SCOPES = (
-    "instagram_basic,"
-    "instagram_content_publish,"
-    "pages_manage_posts,instagram_manage_insights,"
-    "pages_show_list"
-)
+INSTAGRAM_AUTH_URL = "https://api.instagram.com/oauth/authorize"
+INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
+INSTAGRAM_GRAPH_BASE = "https://graph.instagram.com"
+
+OAUTH_SCOPES = "instagram_business_basic,instagram_business_content_publish"
 
 
 # ─── State JWT (CSRF) ────────────────────────────────────────────
@@ -42,12 +38,13 @@ def decode_state_token(state: str, secret: str) -> str:
 # ─── URL de autorização ──────────────────────────────────────────
 
 def build_auth_url(app_id: str, redirect_uri: str, state: str) -> str:
-    """Monta a URL de autorização do Meta OAuth com todos os scopes necessários."""
+    """Monta a URL de autorização da Instagram API."""
     return (
-        f"{OAUTH_DIALOG}"
+        f"{INSTAGRAM_AUTH_URL}"
         f"?client_id={app_id}"
         f"&redirect_uri={redirect_uri}"
         f"&scope={OAUTH_SCOPES}"
+        f"&response_type=code"
         f"&state={state}"
     )
 
@@ -61,15 +58,16 @@ async def exchange_code_for_short_token(
     redirect_uri: str,
 ) -> str:
     """
-    Troca o authorization code por um Short-Lived Token (~1 hora).
-    POST https://graph.facebook.com/v21.0/oauth/access_token
+    Troca o authorization code por Short-Lived Token (~1 hora).
+    POST https://api.instagram.com/oauth/access_token
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            f"{GRAPH_BASE}/oauth/access_token",
+            INSTAGRAM_TOKEN_URL,
             data={
                 "client_id": app_id,
                 "client_secret": app_secret,
+                "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
                 "code": code,
             },
@@ -84,22 +82,21 @@ async def exchange_code_for_short_token(
 
 async def exchange_for_long_lived_token(
     short_token: str,
-    app_id: str,
+    app_id: str,  # não usado pela Instagram API, mantido por compatibilidade de assinatura
     app_secret: str,
 ) -> tuple[str, datetime]:
     """
     Troca o Short-Lived Token por Long-Lived Token (~60 dias).
-    GET https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token
+    GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
     Retorna (long_lived_token, expires_at).
     """
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
-            f"{GRAPH_BASE}/oauth/access_token",
+            f"{INSTAGRAM_GRAPH_BASE}/access_token",
             params={
-                "grant_type": "fb_exchange_token",
-                "client_id": app_id,
+                "grant_type": "ig_exchange_token",
                 "client_secret": app_secret,
-                "fb_exchange_token": short_token,
+                "access_token": short_token,
             },
         )
     if resp.status_code != 200:
@@ -107,97 +104,66 @@ async def exchange_for_long_lived_token(
             status_code=400,
             detail=f"Erro ao obter Long-Lived Token: {resp.text}",
         )
-    long_token = resp.json()["access_token"]
-    expires_at = datetime.now(timezone.utc) + timedelta(days=60)
+    data = resp.json()
+    long_token = data["access_token"]
+    expires_in_seconds = data.get("expires_in", 5_184_000)  # padrão 60 dias
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
     return long_token, expires_at
 
 
-# ─── Busca de IDs IG / Facebook ──────────────────────────────────
-
-async def get_instagram_business_info(
-    long_token: str,
-) -> tuple[str, str, str, str]:
+async def refresh_long_lived_token(long_token: str) -> tuple[str, datetime]:
     """
-    Busca a primeira Página do Facebook que tenha uma conta Instagram Business.
-    Retorna (facebook_page_id, facebook_page_name, ig_business_id, ig_username).
-    Levanta 400 se nenhuma Página/conta IG Business for encontrada.
+    Renova um Long-Lived Token Instagram válido (não requer app_secret).
+    GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token
+    Retorna (new_token, new_expires_at).
     """
-    # 1. Listar páginas do usuário
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
-            f"{GRAPH_BASE}/me/accounts",
-            params={"access_token": long_token},
+            f"{INSTAGRAM_GRAPH_BASE}/refresh_access_token",
+            params={
+                "grant_type": "ig_refresh_token",
+                "access_token": long_token,
+            },
         )
     if resp.status_code != 200:
-        raise HTTPException(status_code=400, detail="Erro ao buscar Páginas do Facebook.")
-
-    pages = resp.json().get("data", [])
-    if not pages:
         raise HTTPException(
             status_code=400,
-            detail=f"Nenhuma Página do Facebook encontrada. Resposta Meta: {resp.json()}",
+            detail=f"Erro ao renovar token Instagram: {resp.text}",
         )
+    data = resp.json()
+    new_token = data["access_token"]
+    expires_in_seconds = data.get("expires_in", 5_184_000)
+    new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
+    return new_token, new_expires_at
 
-    # 2. Para cada página, verificar se há IG Business Account
-    ig_debug = []
-    for page in pages:
-        page_id = page["id"]
-        page_name = page.get("name", "")
-        page_token = page.get("access_token", long_token)
 
-        # Tenta campo instagram_business_account via page token
-        async with httpx.AsyncClient() as client:
-            ig_resp = await client.get(
-                f"{GRAPH_BASE}/{page_id}",
-                params={
-                    "fields": "instagram_business_account,connected_instagram_account",
-                    "access_token": page_token,
-                },
-            )
+# ─── Busca de informações do usuário Instagram ──────────────────
 
-        # Tenta também via user token direto
-        async with httpx.AsyncClient() as client:
-            ig_user_resp = await client.get(
-                f"{GRAPH_BASE}/{page_id}",
-                params={
-                    "fields": "instagram_business_account,connected_instagram_account",
-                    "access_token": long_token,
-                },
-            )
-
-        ig_debug.append({
-            "page": page_name,
-            "id": page_id,
-            "via_page_token": ig_resp.json(),
-            "via_user_token": ig_user_resp.json(),
-        })
-
-        ig_data = ig_resp.json()
-        ig_account = ig_data.get("instagram_business_account") or ig_data.get("connected_instagram_account")
-        if not ig_account:
-            ig_data2 = ig_user_resp.json()
-            ig_account = ig_data2.get("instagram_business_account") or ig_data2.get("connected_instagram_account")
-        if not ig_account:
-            continue
-
-        ig_id = ig_account["id"]
-
-        # 3. Buscar username do Instagram
-        async with httpx.AsyncClient() as client:
-            user_resp = await client.get(
-                f"{GRAPH_BASE}/{ig_id}",
-                params={
-                    "fields": "username",
-                    "access_token": page_token,
-                },
-            )
-        ig_username = ""
-        if user_resp.status_code == 200:
-            ig_username = user_resp.json().get("username", "")
-
-        return page_id, page_name, ig_id, ig_username
-
-    raise HTTPException(
-        status_code=400,
-        detail=f"Nenhuma conta Instagram Business encontrada. Debug: {ig_debug}",
-    )
+async def get_instagram_user_info(long_token: str) -> tuple[str, str]:
+    """
+    Busca user_id e username via Instagram API.
+    GET https://graph.instagram.com/me?fields=user_id,username
+    Retorna (ig_user_id, ig_username).
+    """
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{INSTAGRAM_GRAPH_BASE}/me",
+            params={
+                "fields": "user_id,username",
+                "access_token": long_token,
+            },
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erro ao buscar informações da conta Instagram: {resp.text}",
+        )
+    data = resp.json()
+    ig_user_id = str(data.get("user_id") or data.get("id", ""))
+    ig_username = data.get("username", "")
+    if not ig_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Não foi possível obter o ID da conta Instagram.",
+        )
+    return ig_user_id, ig_username

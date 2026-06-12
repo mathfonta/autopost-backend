@@ -1,21 +1,19 @@
 """
-Agente Publicador — publica posts aprovados no Instagram Business e Facebook
+Agente Publicador — publica posts aprovados no Instagram Business
 via Meta Graph API v21+.
 
 #OBJETIVO
-Publicar a imagem processada + legenda no(s) canal(is) do cliente e registrar
+Publicar a imagem processada + legenda no canal do cliente e registrar
 os IDs de publicação para rastreamento de métricas.
 
 #DIRETRIZES
 - Processo Instagram: 2 etapas (create container → publish)
-- Facebook: 1 etapa (POST /photos)
 - Token expirado → falha com mensagem orientando renovação
-- Falha no Facebook não cancela publicação do Instagram
 
 #CONTEXTO
 - Imagem já processada (1080×1080, ≤8MB) disponível em URL pública do R2
 - Legenda, hashtags e CTA vêm do copy_result
-- Credenciais Meta por cliente (meta_access_token, instagram_business_id, facebook_page_id)
+- Credenciais: meta_access_token, instagram_business_id
 
 #RESTRIÇÕES
 - Nunca expor access_token em logs
@@ -375,37 +373,6 @@ async def publish_story_to_instagram(
 
     logger.info(f"[publisher] Story publicada post_id={post_id}")
     return {"post_id": post_id, "permalink": ""}
-
-
-# ─── Facebook ────────────────────────────────────────────────────────────────
-
-async def publish_to_facebook(
-    facebook_page_id: str,
-    access_token: str,
-    image_url: str,
-    caption: str,
-) -> dict:
-    """
-    Publica imagem na Página do Facebook.
-
-    Returns:
-        dict com: post_id
-    """
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.post(
-            f"{GRAPH_BASE}/{facebook_page_id}/photos",
-            data={
-                "url": image_url,
-                "message": caption,
-                "access_token": access_token,
-            },
-        )
-        data = resp.json()
-        _raise_if_error(data, "fb_publish_photo")
-        post_id = data.get("post_id") or data.get("id", "")
-
-    logger.info(f"[publisher] Facebook publicado post_id={post_id}")
-    return {"post_id": post_id}
 
 
 # ─── Métricas ────────────────────────────────────────────────────────────────

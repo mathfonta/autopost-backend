@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     META_REDIRECT_URI: str = ""  # ex: https://espectra-api-production.up.railway.app/meta/callback
     FRONTEND_URL: str = "http://localhost:3000"  # ex: https://autopost-frontend-one.vercel.app
 
+    # Instagram API (nova — sem Facebook Login)
+    INSTAGRAM_APP_ID: str = ""
+    INSTAGRAM_APP_SECRET: str = ""
+
     # ─── Segundo Cérebro ─────────────────────────────────────
     # Em produção/local: aponta para o vault Obsidian
     # Ex: C:\Users\Matheus\OneDrive\Obsidian\AutoPost\🧠 Cerebro

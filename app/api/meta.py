@@ -25,7 +25,8 @@ from app.core.meta_oauth import (
     decode_state_token,
     exchange_code_for_short_token,
     exchange_for_long_lived_token,
-    get_instagram_business_info,
+    refresh_long_lived_token,
+    get_instagram_user_info,
 )
 from app.models.client import Client
 
@@ -47,7 +48,7 @@ async def meta_connect(
     settings = get_settings()
     state = create_state_token(str(current_client.id), settings.JWT_SECRET)
     auth_url = build_auth_url(
-        app_id=settings.META_APP_ID,
+        app_id=settings.INSTAGRAM_APP_ID,
         redirect_uri=settings.META_REDIRECT_URI,
         state=state,
     )
@@ -86,31 +87,29 @@ async def meta_callback(
     # 3. Short-Lived Token
     short_token = await exchange_code_for_short_token(
         code=code,
-        app_id=settings.META_APP_ID,
-        app_secret=settings.META_APP_SECRET,
+        app_id=settings.INSTAGRAM_APP_ID,
+        app_secret=settings.INSTAGRAM_APP_SECRET,
         redirect_uri=settings.META_REDIRECT_URI,
     )
 
     # 4. Long-Lived Token
     long_token, expires_at = await exchange_for_long_lived_token(
         short_token=short_token,
-        app_id=settings.META_APP_ID,
-        app_secret=settings.META_APP_SECRET,
+        app_id=settings.INSTAGRAM_APP_ID,
+        app_secret=settings.INSTAGRAM_APP_SECRET,
     )
 
-    # 5. Buscar IDs do Instagram Business
-    page_id, page_name, ig_id, ig_username = await get_instagram_business_info(long_token)
+    # 5. Buscar ID e username da conta Instagram
+    ig_id, ig_username = await get_instagram_user_info(long_token)
 
     # 6. Persistir no banco
     client.meta_access_token = long_token
     client.meta_token_expires_at = expires_at
-    client.facebook_page_id = page_id
-    client.facebook_page_name = page_name
     client.instagram_business_id = ig_id
     client.instagram_username = ig_username
     await db.commit()
 
-    logger.info(f"[meta] cliente {client.id} conectou IG @{ig_username} / página '{page_name}'")
+    logger.info(f"[meta] cliente {client.id} conectou Instagram @{ig_username}")
     frontend_url = settings.FRONTEND_URL.rstrip("/")
     return RedirectResponse(
         url=f"{frontend_url}/onboarding?connected=true&username={ig_username}",
@@ -164,12 +163,9 @@ async def meta_refresh(
     if not current_client.meta_access_token:
         raise HTTPException(status_code=400, detail="Nenhuma conta Meta conectada.")
 
-    settings = get_settings()
     try:
-        new_token, new_expires_at = await exchange_for_long_lived_token(
-            short_token=current_client.meta_access_token,
-            app_id=settings.META_APP_ID,
-            app_secret=settings.META_APP_SECRET,
+        new_token, new_expires_at = await refresh_long_lived_token(
+            long_token=current_client.meta_access_token,
         )
     except Exception as exc:
         logger.error(f"[meta/refresh] falha na renovação client_id={current_client.id}: {exc}")

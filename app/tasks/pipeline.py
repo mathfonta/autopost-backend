@@ -76,7 +76,6 @@ async def _get_request_with_client(request_id: str) -> dict:
             # Credenciais Meta (podem ser None)
             "meta_access_token": (client.meta_access_token or "") if client else "",
             "instagram_business_id": (client.instagram_business_id or "") if client else "",
-            "facebook_page_id": (client.facebook_page_id or "") if client else "",
         }
 
 
@@ -525,7 +524,6 @@ def publish_post(self, request_id: str) -> str:
     """
     from app.agents.publisher import (
         publish_to_instagram,
-        publish_to_facebook,
         publish_carousel_to_instagram,
         publish_reel_to_instagram,
         publish_story_to_instagram,
@@ -550,12 +548,10 @@ def publish_post(self, request_id: str) -> str:
         full_caption = build_full_caption(req["copy_result"])
         access_token = req["meta_access_token"]
         ig_id = req["instagram_business_id"]
-        fb_id = req["facebook_page_id"]
         content_type = req.get("content_type", "")
         design_result = req.get("design_result") or {}
 
         instagram_post_id = None
-        facebook_post_id = None
         permalink = None
 
         # ── Instagram — Reels ──
@@ -629,22 +625,8 @@ def publish_post(self, request_id: str) -> str:
                     return request_id
                 raise
 
-        # ── Facebook (opcional — apenas imagens; vídeo/carrossel/story não suportados) ──
-        if content_type not in ("carousel", "reels", "story") and fb_id and access_token:
-            r2_key = design_result.get("r2_key") or req.get("photo_key", "")
-            if r2_key:
-                image_url = generate_presigned_url(r2_key, expires_in=3600)
-            else:
-                image_url = design_result.get("processed_photo_url") or req["photo_url"]
-            try:
-                fb = _run_sync(publish_to_facebook(fb_id, access_token, image_url, full_caption))
-                facebook_post_id = fb["post_id"]
-            except MetaAPIError as exc:
-                logger.warning(f"[publish_post] falha no Facebook (ignorada): {exc}")
-
         publish_result = {
             "instagram_post_id": instagram_post_id,
-            "facebook_post_id": facebook_post_id,
             "permalink": permalink,
             "published_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -660,7 +642,6 @@ def publish_post(self, request_id: str) -> str:
             "post_id": request_id,
             "content_type": content_type,
             "has_instagram": bool(instagram_post_id),
-            "has_facebook": bool(facebook_post_id),
         })
 
         # Incrementa sequência de ataque (Story 14.2) — capped em 10
