@@ -40,7 +40,11 @@ async def get_current_client(
     client = result.scalar_one_or_none()
 
     if not client:
-        raise HTTPException(status_code=404, detail="Conta não encontrada")
+        client = Client(id=uuid.UUID(str(user_id)))
+        db.add(client)
+        await db.commit()
+        await db.refresh(client)
+
     if not client.is_active:
         raise HTTPException(status_code=403, detail="Conta desativada")
 
