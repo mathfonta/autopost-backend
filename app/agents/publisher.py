@@ -48,6 +48,7 @@ class MetaAPIError(Exception):
 def _raise_if_error(data: dict, operation: str) -> None:
     if "error" in data:
         err = data["error"]
+        logger.error(f"[publisher] API error op={operation} code={err.get('code')} subcode={err.get('error_subcode')} msg={err.get('message')} type={err.get('type')} fbtrace={err.get('fbtrace_id')}")
         raise MetaAPIError(
             f"[{operation}] {err.get('message', 'Erro desconhecido')}",
             code=err.get("code", 0),
