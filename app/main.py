@@ -61,7 +61,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://autopost.com.br",
+        "https://www.autopost.com.br",
         "https://autopost.app.br",
+        "https://www.autopost.app.br",
         "https://autopost-frontend-one.vercel.app",
     ],
     allow_credentials=True,
