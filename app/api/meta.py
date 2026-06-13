@@ -190,6 +190,28 @@ async def meta_refresh(
     }
 
 
+# ─── DELETE /meta/disconnect ─────────────────────────────────────
+
+@router.delete("/disconnect")
+async def meta_disconnect(
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Remove a conexão Meta/Instagram do cliente autenticado.
+    Limpa token, datas de expiração e IDs da conta Instagram.
+    """
+    current_client.meta_access_token = None
+    current_client.meta_token_expires_at = None
+    current_client.instagram_business_id = None
+    current_client.instagram_username = None
+    current_client.facebook_page_name = None
+    await db.commit()
+
+    logger.info(f"[meta/disconnect] cliente {current_client.id} desconectou Instagram")
+    return {"disconnected": True}
+
+
 # ─── POST /meta/data-deletion ────────────────────────────────────
 # Obrigatório pelo Instagram Login (Meta App Review).
 # Chamado quando usuário remove o app via instagram.com → Configurações → Apps e sites.
