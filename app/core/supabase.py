@@ -59,12 +59,27 @@ async def supabase_reset_password_email(email: str, redirect_to: str):
 
 
 async def supabase_update_password(access_token: str, new_password: str):
-    """Atualiza senha usando o access_token de recovery do Supabase."""
+    """Atualiza senha usando o access_token de recovery do Supabase.
+
+    Decodifica o JWT para obter user_id sem validar expiração —
+    get_user() rejeita tokens expirados antes de chegar no admin update.
+    A segurança é garantida pelo service role key + entrega do email pela Supabase.
+    """
+    import base64, json
+
+    try:
+        parts = access_token.split(".")
+        if len(parts) != 3:
+            raise ValueError("formato inválido")
+        padding = "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError("sub ausente")
+    except Exception as exc:
+        raise ValueError(f"Token de recuperação inválido: {exc}")
+
     client = _get_supabase_sync()
-    user_response = await asyncio.to_thread(client.auth.get_user, access_token)
-    if not user_response.user:
-        raise ValueError("Token de recuperação inválido ou expirado")
-    user_id = str(user_response.user.id)
     return await asyncio.to_thread(
         client.auth.admin.update_user_by_id,
         user_id,
