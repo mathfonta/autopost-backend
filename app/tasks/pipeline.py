@@ -961,6 +961,35 @@ async def _save_weekly_context(
         logger.info(f"[weekly-intel] WeeklyContext salvo week_of={week_of} segment={segment!r}")
 
 
+# ─── Story 1.5: Supabase Keep-Alive (Celery Beat) ────────────────
+
+@celery_app.task(bind=True, name="pipeline.keepalive_ping", max_retries=0)
+def keepalive_ping(self) -> str:
+    """
+    Task Celery Beat — mantém o projeto Supabase (free tier) ativo.
+    Executa um SELECT 1 trivial a cada poucos dias para evitar a auto-pausa
+    por inatividade (~7 dias sem query). Não depende de nenhum modelo de
+    negócio — qualquer falha (ex.: banco já pausado, rede instável) é
+    capturada e logada aqui mesmo; a task nunca propaga exceção nem aciona
+    retry, pois a próxima execução agendada já cobre a tentativa seguinte.
+    """
+    from sqlalchemy import text
+
+    async def _ping():
+        from app.core.database import WorkerSessionLocal
+
+        async with WorkerSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+
+    try:
+        _run_sync(_ping())
+        logger.info("[keepalive] ping ok")
+        return "ok"
+    except Exception as exc:
+        logger.error(f"[keepalive] falha no ping: {exc}")
+        return f"error: {exc}"
+
+
 # ─── Pipeline Chain ──────────────────────────────────────────────
 
 def start_content_pipeline(request_id: str) -> str:

@@ -24,6 +24,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=7, minute=0, day_of_week="monday"),
         # timezone já configurado em celery_app.conf.timezone = "America/Sao_Paulo"
     },
+    "supabase-keepalive": {
+        "task": "pipeline.keepalive_ping",
+        # Segunda e quinta — sempre bem abaixo do limite de ~7 dias de
+        # inatividade que causa auto-pausa do Supabase free tier (Story 1.5).
+        "schedule": crontab(hour=6, minute=0, day_of_week="monday,thursday"),
+    },
 }
 
 celery_app.conf.update(
