@@ -160,6 +160,34 @@ def test_callback_success():
     assert "username=empresa_teste_ig" in location
 
 
+def test_callback_token_exchange_failure_redirects_with_error():
+    """Falha na troca de token (ex.: conta não-profissional) redireciona com erro, não JSON cru (Story 12.4)."""
+    client_mock = _fake_client()
+    state = _make_state()
+
+    async def _db_override():
+        yield _make_db(client_mock)
+
+    app.dependency_overrides[get_db] = _db_override
+
+    with respx.mock:
+        respx.post("https://api.instagram.com/oauth/access_token").mock(
+            return_value=httpx.Response(400, json={"error_message": "Invalid authorization code"})
+        )
+
+        with patch("app.api.meta.get_settings", return_value=_mock_settings()):
+            with TestClient(app, follow_redirects=False) as client:
+                response = client.get(f"/meta/callback?code=bad-code&state={state}")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert "connected=false" in location
+    assert "error=" in location
+    assert "onboarding" in location
+
+
 def test_callback_saves_token_and_ids():
     """Callback deve persistir meta_access_token, IDs e username no Client."""
     client_mock = _fake_client()

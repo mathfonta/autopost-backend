@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import uuid
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse
@@ -88,23 +89,35 @@ async def meta_callback(
     if not client:
         raise HTTPException(status_code=400, detail="Cliente não encontrado.")
 
-    # 3. Short-Lived Token
-    short_token = await exchange_code_for_short_token(
-        code=code,
-        app_id=settings.INSTAGRAM_APP_ID,
-        app_secret=settings.INSTAGRAM_APP_SECRET,
-        redirect_uri=settings.META_REDIRECT_URI,
-    )
+    frontend_url = settings.FRONTEND_URL.rstrip("/")
 
-    # 4. Long-Lived Token
-    long_token, expires_at = await exchange_for_long_lived_token(
-        short_token=short_token,
-        app_id=settings.INSTAGRAM_APP_ID,
-        app_secret=settings.INSTAGRAM_APP_SECRET,
-    )
-
-    # 5. Buscar ID e username da conta Instagram
-    ig_id, ig_username = await get_instagram_user_info(long_token)
+    # 3-5. Troca de tokens + busca de dados da conta — falhas aqui acontecem
+    # DEPOIS do usuário já ter sido redirecionado de volta pela Meta, então
+    # nunca devem virar uma resposta JSON crua: sempre redireciona de volta
+    # ao onboarding com uma mensagem orientativa (Story 12.4).
+    try:
+        short_token = await exchange_code_for_short_token(
+            code=code,
+            app_id=settings.INSTAGRAM_APP_ID,
+            app_secret=settings.INSTAGRAM_APP_SECRET,
+            redirect_uri=settings.META_REDIRECT_URI,
+        )
+        long_token, expires_at = await exchange_for_long_lived_token(
+            short_token=short_token,
+            app_id=settings.INSTAGRAM_APP_ID,
+            app_secret=settings.INSTAGRAM_APP_SECRET,
+        )
+        ig_id, ig_username = await get_instagram_user_info(long_token)
+    except Exception as exc:
+        logger.error(f"[meta/callback] falha ao conectar client_id={client.id}: {exc}")
+        error_msg = quote(
+            "Não foi possível conectar. Confirme que sua conta do Instagram é "
+            "Business ou Creator e tente novamente."
+        )
+        return RedirectResponse(
+            url=f"{frontend_url}/onboarding?connected=false&error={error_msg}",
+            status_code=302,
+        )
 
     # 6. Persistir no banco
     client.meta_access_token = long_token
@@ -114,7 +127,6 @@ async def meta_callback(
     await db.commit()
 
     logger.info(f"[meta] cliente {client.id} conectou Instagram @{ig_username}")
-    frontend_url = settings.FRONTEND_URL.rstrip("/")
     return RedirectResponse(
         url=f"{frontend_url}/onboarding?connected=true&username={ig_username}",
         status_code=302,
