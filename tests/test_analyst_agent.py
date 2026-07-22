@@ -25,6 +25,21 @@ PHOTO_URL = "https://r2.example.com/test/photo.jpg"
 BRAND_PROFILE = {"segment": "construção civil", "city": "Florianópolis", "tone": "profissional"}
 
 
+@pytest.fixture(autouse=True)
+def _mock_photo_download():
+    """
+    Todos os testes deste arquivo chamam analyze_photo_with_ai(PHOTO_URL, ...)
+    sem photo_key — cai no fallback HTTP (não R2) e tentava rede real contra
+    o domínio fake r2.example.com. Mocka o download para rodar offline.
+    """
+    fake_response = MagicMock()
+    fake_response.content = b"\xff\xd8\xff" + b"0" * 50  # bytes pequenos, magic bytes JPEG
+    fake_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=fake_response)):
+        yield
+
+
 # ─── Análise de qualidade ────────────────────────────────────────
 
 

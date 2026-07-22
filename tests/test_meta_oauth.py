@@ -23,16 +23,8 @@ from app.core.database import get_db
 CLIENT_ID = uuid.uuid4()
 JWT_SECRET = "test-secret-meta-oauth"
 
-MOCK_PAGES_RESP = {
-    "data": [
-        {"id": "page-111", "name": "Empresa Teste", "access_token": "page-token-abc"}
-    ]
-}
-MOCK_PAGE_IG_RESP = {
-    "id": "page-111",
-    "instagram_business_account": {"id": "ig-222"},
-}
-MOCK_IG_USER_RESP = {"id": "ig-222", "username": "empresa_teste_ig"}
+MOCK_LONG_TOKEN_RESP = {"access_token": "long-token-xyz", "token_type": "bearer", "expires_in": 5_184_000}
+MOCK_IG_USER_RESP = {"user_id": "ig-222", "username": "empresa_teste_ig"}
 
 
 # ─── Helpers ─────────────────────────────────────────────────────
@@ -80,8 +72,8 @@ def _make_state(client_id=None, secret=JWT_SECRET):
 def _mock_settings(secret=JWT_SECRET):
     settings = MagicMock()
     settings.JWT_SECRET = secret
-    settings.META_APP_ID = "test-app-id"
-    settings.META_APP_SECRET = "test-app-secret"
+    settings.INSTAGRAM_APP_ID = "test-app-id"
+    settings.INSTAGRAM_APP_SECRET = "test-app-secret"
     settings.META_REDIRECT_URI = "https://example.com/meta/callback"
     return settings
 
@@ -103,8 +95,8 @@ def test_connect_returns_auth_url():
     data = response.json()
     assert "auth_url" in data
     assert "test-app-id" in data["auth_url"]
-    assert "instagram_basic" in data["auth_url"]
-    assert "instagram_content_publish" in data["auth_url"]
+    assert "instagram_business_basic" in data["auth_url"]
+    assert "instagram_business_content_publish" in data["auth_url"]
 
 
 def test_connect_state_contains_client_id():
@@ -146,19 +138,13 @@ def test_callback_success():
     app.dependency_overrides[get_db] = _db_override
 
     with respx.mock:
-        respx.post("https://graph.facebook.com/v21.0/oauth/access_token").mock(
+        respx.post("https://api.instagram.com/oauth/access_token").mock(
             return_value=httpx.Response(200, json={"access_token": "short-token-111"})
         )
-        respx.get("https://graph.facebook.com/v21.0/oauth/access_token").mock(
-            return_value=httpx.Response(200, json={"access_token": "long-token-xyz"})
+        respx.get("https://graph.instagram.com/access_token").mock(
+            return_value=httpx.Response(200, json=MOCK_LONG_TOKEN_RESP)
         )
-        respx.get("https://graph.facebook.com/v21.0/me/accounts").mock(
-            return_value=httpx.Response(200, json=MOCK_PAGES_RESP)
-        )
-        respx.get("https://graph.facebook.com/v21.0/page-111").mock(
-            return_value=httpx.Response(200, json=MOCK_PAGE_IG_RESP)
-        )
-        respx.get("https://graph.facebook.com/v21.0/ig-222").mock(
+        respx.get("https://graph.instagram.com/me").mock(
             return_value=httpx.Response(200, json=MOCK_IG_USER_RESP)
         )
 
@@ -185,19 +171,13 @@ def test_callback_saves_token_and_ids():
     app.dependency_overrides[get_db] = _db_override
 
     with respx.mock:
-        respx.post("https://graph.facebook.com/v21.0/oauth/access_token").mock(
+        respx.post("https://api.instagram.com/oauth/access_token").mock(
             return_value=httpx.Response(200, json={"access_token": "short-token-111"})
         )
-        respx.get("https://graph.facebook.com/v21.0/oauth/access_token").mock(
-            return_value=httpx.Response(200, json={"access_token": "long-token-xyz"})
+        respx.get("https://graph.instagram.com/access_token").mock(
+            return_value=httpx.Response(200, json=MOCK_LONG_TOKEN_RESP)
         )
-        respx.get("https://graph.facebook.com/v21.0/me/accounts").mock(
-            return_value=httpx.Response(200, json=MOCK_PAGES_RESP)
-        )
-        respx.get("https://graph.facebook.com/v21.0/page-111").mock(
-            return_value=httpx.Response(200, json=MOCK_PAGE_IG_RESP)
-        )
-        respx.get("https://graph.facebook.com/v21.0/ig-222").mock(
+        respx.get("https://graph.instagram.com/me").mock(
             return_value=httpx.Response(200, json=MOCK_IG_USER_RESP)
         )
 
@@ -207,11 +187,11 @@ def test_callback_saves_token_and_ids():
 
     app.dependency_overrides.clear()
 
+    # Fluxo nativo Instagram (pós migração 13/06) não linka mais Facebook Page —
+    # facebook_page_id/facebook_page_name não são mais persistidos pelo callback.
     assert client_mock.meta_access_token == "long-token-xyz"
     assert client_mock.instagram_business_id == "ig-222"
     assert client_mock.instagram_username == "empresa_teste_ig"
-    assert client_mock.facebook_page_id == "page-111"
-    assert client_mock.facebook_page_name == "Empresa Teste"
     assert client_mock.meta_token_expires_at is not None
 
 
@@ -358,7 +338,7 @@ def test_refresh_renews_token():
     new_expires = datetime.now(timezone.utc) + timedelta(days=60)
 
     with patch(
-        "app.api.meta.exchange_for_long_lived_token",
+        "app.api.meta.refresh_long_lived_token",
         new=AsyncMock(return_value=("new-long-token", new_expires)),
     ):
         with patch("app.api.meta.get_settings", return_value=_mock_settings()):

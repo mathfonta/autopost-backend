@@ -24,3 +24,34 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
 # Testes dedicados ao path Gemini sobrescrevem isso explicitamente via monkeypatch.
 os.environ.setdefault("COPY_PROVIDER", "claude")
 os.environ.setdefault("ANALYST_PROVIDER", "claude")
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """
+    O slowapi.Limiter usa storage em memória, singleton por processo —
+    sem isso, testes que batem em endpoints com @limiter.limit() acumulam
+    hits entre testes (todos vêm do mesmo endereço via TestClient) e
+    começam a retornar 429 depois de N testes, mascarando o resultado real.
+    """
+    from app.core.limiter import limiter
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def _skip_real_migrations():
+    """
+    O lifespan da app roda _run_migrations() a cada TestClient(app) — que
+    instancia alembic.config.Config("alembic.ini") e internamente reconfigura
+    o logging global do Python (fileConfig, desabilita loggers não listados
+    na ini), mesmo quando a migration falha depois por falta de banco real.
+    Isso corrompe caplog silenciosamente em QUALQUER teste que rodar depois
+    de um teste com TestClient — sintoma: caplog.text vazio sem razão aparente.
+    Mockar aqui evita rodar migrations reais nos testes (nunca deveriam rodar
+    contra DATABASE_URL fake) e elimina o efeito colateral no logging.
+    """
+    from unittest.mock import patch
+    with patch("app.main._run_migrations"):
+        yield

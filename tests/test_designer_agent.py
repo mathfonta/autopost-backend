@@ -89,29 +89,28 @@ async def test_clean_photo_type():
 
 @pytest.mark.asyncio
 async def test_card_type_for_dica():
-    """content_type=dica → type == card, não baixa foto original."""
-    download_mock = AsyncMock()
+    """content_type=dica → type == clean_photo (card automático removido, commit 268e447 — copy vai só na legenda)."""
     with (
-        patch("app.agents.designer._download_image", download_mock),
+        patch("app.agents.designer._download_image", return_value=_img()),
         patch("app.agents.designer.upload_to_r2", new_callable=AsyncMock, return_value=FAKE_URL),
         patch("app.agents.designer._get_logo", new_callable=AsyncMock, return_value=None),
     ):
         result = await process_image("id", "https://r2.example.com/p.jpg", ANALYSIS_CARD, BRAND)
-        download_mock.assert_not_called()
 
-    assert result["type"] == "card"
+    assert result["type"] == "clean_photo"
 
 
 @pytest.mark.asyncio
 async def test_card_type_for_promocao():
-    """content_type=promocao → type == card."""
+    """content_type=promocao → type == clean_photo (card automático removido, commit 268e447)."""
     with (
+        patch("app.agents.designer._download_image", return_value=_img()),
         patch("app.agents.designer.upload_to_r2", new_callable=AsyncMock, return_value=FAKE_URL),
         patch("app.agents.designer._get_logo", new_callable=AsyncMock, return_value=None),
     ):
         result = await process_image("id", "https://r2.example.com/p.jpg", ANALYSIS_PROMOCAO, BRAND)
 
-    assert result["type"] == "card"
+    assert result["type"] == "clean_photo"
 
 
 @pytest.mark.asyncio

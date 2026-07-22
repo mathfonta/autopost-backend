@@ -41,6 +41,7 @@ def _rid():
 def _fake_request_with_client():
     return {
         "id": str(uuid.uuid4()),
+        "client_id": str(uuid.uuid4()),
         "photo_url": "https://r2.example.com/photo.jpg",
         "photo_key": "uploads/photo.jpg",
         "brand_profile": {"segment": "construção", "city": "Florianópolis"},
@@ -322,6 +323,8 @@ def test_publish_post_transitions_to_published():
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request", new=AsyncMock(return_value=_fake_request(status=ContentStatus.awaiting_approval))),
+        patch("app.tasks.pipeline._increment_attack_sequence", new=AsyncMock()),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
         patch("app.agents.publisher.publish_to_instagram", side_effect=fake_ig),
         patch("app.tasks.pipeline.collect_metrics"),  # evita agendamento real
@@ -619,6 +622,8 @@ def test_publish_post_carousel_transitions_to_published():
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request", new=AsyncMock(return_value=_fake_request(status=ContentStatus.awaiting_approval))),
+        patch("app.tasks.pipeline._increment_attack_sequence", new=AsyncMock()),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get),
         patch("app.agents.publisher.publish_carousel_to_instagram", side_effect=fake_carousel),
         patch("app.core.storage.generate_presigned_url", return_value="https://r2.example.com/signed.jpg"),
@@ -664,6 +669,8 @@ def test_publish_post_before_after_uses_single_photo_flow():
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request", new=AsyncMock(return_value=_fake_request(status=ContentStatus.awaiting_approval))),
+        patch("app.tasks.pipeline._increment_attack_sequence", new=AsyncMock()),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get),
         patch("app.agents.publisher.publish_to_instagram", side_effect=fake_ig),
         patch("app.agents.publisher.publish_carousel_to_instagram", side_effect=fake_carousel),
@@ -694,6 +701,8 @@ def test_publish_post_carousel_token_expired_sets_failed():
 
     with (
         patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request", new=AsyncMock(return_value=_fake_request(status=ContentStatus.awaiting_approval))),
+        patch("app.tasks.pipeline._increment_attack_sequence", new=AsyncMock()),
         patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get),
         patch("app.agents.publisher.publish_carousel_to_instagram", side_effect=fake_carousel),
         patch("app.core.storage.generate_presigned_url", return_value="https://r2.example.com/signed.jpg"),

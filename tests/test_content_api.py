@@ -55,6 +55,7 @@ def _fake_content_request(status=ContentStatus.pending, client_id=None, retry_co
     req.caption_short = None
     req.caption_stories = None
     req.caption_selected = "long"
+    req.marketing_intent = None
     req.created_at = datetime.now(timezone.utc)
     req.updated_at = datetime.now(timezone.utc)
     return req

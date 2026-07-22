@@ -9,7 +9,6 @@ from httpx import Response
 
 from app.agents.publisher import (
     publish_to_instagram,
-    publish_to_facebook,
     collect_post_metrics,
     build_full_caption,
     MetaAPIError,
@@ -17,7 +16,6 @@ from app.agents.publisher import (
 )
 
 IG_ID = "123456789"
-FB_ID = "987654321"
 TOKEN = "test-access-token"
 IMAGE_URL = "https://pub.r2.dev/processed/test/final.jpg"
 CAPTION = "Legenda do post.\n\nEntre em contato!\n\n#construcaocivil"
@@ -49,9 +47,12 @@ def test_build_full_caption_empty_hashtags():
 @pytest.mark.asyncio
 @respx.mock
 async def test_instagram_two_step_publish():
-    """publish_to_instagram deve criar container e publicar (2 POSTs + 1 GET)."""
+    """publish_to_instagram deve criar container, aguardar FINISHED e publicar."""
     respx.post(f"{GRAPH_BASE}/{IG_ID}/media").mock(
         return_value=Response(200, json={"id": "container-id-abc"})
+    )
+    respx.get(f"{GRAPH_BASE}/container-id-abc").mock(
+        return_value=Response(200, json={"status_code": "FINISHED"})
     )
     respx.post(f"{GRAPH_BASE}/{IG_ID}/media_publish").mock(
         return_value=Response(200, json={"id": "post-id-xyz"})
@@ -72,6 +73,9 @@ async def test_instagram_returns_post_id_and_permalink():
     """Resultado deve conter post_id e permalink."""
     respx.post(f"{GRAPH_BASE}/{IG_ID}/media").mock(
         return_value=Response(200, json={"id": "c1"})
+    )
+    respx.get(f"{GRAPH_BASE}/c1").mock(
+        return_value=Response(200, json={"status_code": "FINISHED"})
     )
     respx.post(f"{GRAPH_BASE}/{IG_ID}/media_publish").mock(
         return_value=Response(200, json={"id": "p1"})
@@ -117,35 +121,6 @@ async def test_instagram_api_error_raises_meta_error():
         await publish_to_instagram(IG_ID, TOKEN, IMAGE_URL, CAPTION)
 
     assert exc_info.value.is_token_expired is False
-
-
-# ─── publish_to_facebook ────────────────────────────────────────
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_facebook_publish_returns_post_id():
-    """publish_to_facebook deve retornar post_id."""
-    respx.post(f"{GRAPH_BASE}/{FB_ID}/photos").mock(
-        return_value=Response(200, json={"post_id": "fb-post-123", "id": "photo-id"})
-    )
-
-    result = await publish_to_facebook(FB_ID, TOKEN, IMAGE_URL, CAPTION)
-
-    assert result["post_id"] == "fb-post-123"
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_facebook_api_error_raises_meta_error():
-    """Erro da API Facebook deve levantar MetaAPIError."""
-    respx.post(f"{GRAPH_BASE}/{FB_ID}/photos").mock(
-        return_value=Response(200, json={
-            "error": {"code": 200, "message": "Permissions error"}
-        })
-    )
-
-    with pytest.raises(MetaAPIError):
-        await publish_to_facebook(FB_ID, TOKEN, IMAGE_URL, CAPTION)
 
 
 # ─── collect_post_metrics ───────────────────────────────────────
