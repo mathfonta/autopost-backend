@@ -7,11 +7,10 @@ import json
 
 import anthropic
 
+from app.core.ai_parsing import strip_json_fences
 from app.data.theme_library import THEME_LIBRARY
 
 logger = logging.getLogger(__name__)
-
-_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
 
 SLIDE_STRUCTURE_PROMPT = """Você é um especialista em conteúdo para Instagram para pequenas e médias empresas brasileiras.
 
@@ -87,19 +86,14 @@ async def generate_slide_structure(
 
     logger.info(f"[theme_generator] gerando estrutura para theme_id={theme_id}")
 
-    message = _client.messages.create(
+    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+    message = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
 
-    raw = message.content[0].text.strip()
-    # Remove markdown code blocks se Claude retornar
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    raw = strip_json_fences(message.content[0].text.strip())
 
     try:
         structure = json.loads(raw)

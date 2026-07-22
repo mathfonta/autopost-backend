@@ -273,6 +273,55 @@ async def test_timeout_propagates():
             await generate_copy_with_ai(ANALYSIS, BRAND)
 
 
+# ─── Provider Gemini (default de produção) ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_used_when_configured():
+    """COPY_PROVIDER=gemini deve rotear para o client Gemini, não Claude."""
+    mock_response = MagicMock()
+    mock_response.text = json.dumps(GOOD_RESPONSE)
+
+    mock_gemini_client = MagicMock()
+    mock_gemini_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    with (
+        patch("app.agents.copywriter.get_settings") as mock_settings,
+        patch("google.genai.Client", return_value=mock_gemini_client) as mock_genai_cls,
+        patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_claude_cls,
+    ):
+        mock_settings.return_value.COPY_PROVIDER = "gemini"
+        mock_settings.return_value.GEMINI_API_KEY = "fake-gemini-key"
+
+        result = await generate_copy_with_ai(ANALYSIS, BRAND)
+
+    mock_genai_cls.assert_called_once()
+    mock_claude_cls.assert_not_called()
+    assert "caption" in result
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_falls_back_to_claude_without_api_key():
+    """COPY_PROVIDER=gemini sem GEMINI_API_KEY deve cair para Claude (fallback, não outage)."""
+    with (
+        patch("app.agents.copywriter.get_settings") as mock_settings,
+        patch("app.agents.copywriter.anthropic.AsyncAnthropic") as mock_claude_cls,
+    ):
+        mock_settings.return_value.COPY_PROVIDER = "gemini"
+        mock_settings.return_value.GEMINI_API_KEY = ""
+        mock_settings.return_value.ANTHROPIC_API_KEY = "sk-ant-test"
+        mock_claude_client = AsyncMock()
+        mock_claude_cls.return_value = mock_claude_client
+        mock_claude_client.messages.create = AsyncMock(
+            return_value=_mock_claude_response(GOOD_RESPONSE)
+        )
+
+        result = await generate_copy_with_ai(ANALYSIS, BRAND)
+
+    mock_claude_cls.assert_called_once()
+    assert "caption" in result
+
+
 # ─── Story 14.1 — Modo Engenharia: Diretrizes Algorítmicas ─────
 
 

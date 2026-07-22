@@ -21,8 +21,10 @@ class TestThemeGenerator:
         }
         ''')]
 
-        with patch("app.agents.theme_generator._client") as mock_client:
-            mock_client.messages.create.return_value = mock_response
+        with patch("app.agents.theme_generator.anthropic.AsyncAnthropic") as mock_cls:
+            mock_client = AsyncMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
             from app.agents.theme_generator import generate_slide_structure
 
             structure = await generate_slide_structure(

@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str
     GEMINI_API_KEY: str = ""           # Transcrição de áudio via Gemini (provider padrão)
     OPENAI_API_KEY: str = ""           # Transcrição de áudio via Whisper (provider alternativo)
-    TRANSCRIPTION_PROVIDER: str = "gemini"  # "gemini" | "whisper"
-    COPY_PROVIDER: str = "claude"      # "claude" | "gemini"
+    TRANSCRIPTION_PROVIDER: str = "gemini"  # "gemini" | "whisper" — transcrição do áudio de vídeos
+    ANALYST_PROVIDER: str = "gemini"   # "gemini" | "claude" — análise visual de fotos e frames de vídeo
+    COPY_PROVIDER: str = "gemini"      # "gemini" | "claude" — geração de legenda/hashtags/CTA
     EXA_PROVIDER: str = "disabled"    # "exa" | "disabled"
     EXA_API_KEY: str = ""             # Exa Search API key — exa.ai
 

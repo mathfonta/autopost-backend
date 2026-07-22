@@ -232,3 +232,70 @@ async def test_timeout_propagates():
 
         with pytest.raises(anthropic_lib.APITimeoutError):
             await analyze_photo_with_ai(PHOTO_URL, BRAND_PROFILE)
+
+
+# ─── Provider Gemini (default de produção) ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_used_when_configured():
+    """ANALYST_PROVIDER=gemini deve rotear para Gemini Vision, não Claude Haiku."""
+    response_data = {
+        "quality": "good",
+        "quality_reason": "ok",
+        "content_type": "obra_realizada",
+        "description": "Fachada com acabamento em porcelanato.",
+        "publish_clean": True,
+        "stage": "acabamento",
+    }
+    mock_gemini_response = MagicMock()
+    mock_gemini_response.text = json.dumps(response_data)
+
+    mock_gemini_client = MagicMock()
+    mock_gemini_client.aio.models.generate_content = AsyncMock(return_value=mock_gemini_response)
+
+    with (
+        patch("app.agents.analyst.get_settings") as mock_settings,
+        patch("google.genai.Client", return_value=mock_gemini_client) as mock_genai_cls,
+        patch("app.agents.analyst.anthropic.AsyncAnthropic") as mock_claude_cls,
+        patch("app.core.storage.download_from_r2", new=AsyncMock(return_value=b"fake-jpeg-bytes")),
+    ):
+        mock_settings.return_value.ANALYST_PROVIDER = "gemini"
+        mock_settings.return_value.GEMINI_API_KEY = "fake-gemini-key"
+
+        result = await analyze_photo_with_ai(PHOTO_URL, BRAND_PROFILE, photo_key="uploads/test.jpg")
+
+    mock_genai_cls.assert_called_once()
+    mock_claude_cls.assert_not_called()
+    assert result["quality"] == "good"
+
+
+@pytest.mark.asyncio
+async def test_gemini_provider_falls_back_to_claude_without_api_key():
+    """ANALYST_PROVIDER=gemini sem GEMINI_API_KEY deve cair para Claude (fallback, não erro)."""
+    response_data = {
+        "quality": "good",
+        "quality_reason": "ok",
+        "content_type": "obra_realizada",
+        "description": "Fachada com acabamento em porcelanato.",
+        "publish_clean": True,
+        "stage": "acabamento",
+    }
+
+    with (
+        patch("app.agents.analyst.get_settings") as mock_settings,
+        patch("app.agents.analyst.anthropic.AsyncAnthropic") as mock_claude_cls,
+        patch("app.core.storage.download_from_r2", new=AsyncMock(return_value=b"fake-jpeg-bytes")),
+    ):
+        mock_settings.return_value.ANALYST_PROVIDER = "gemini"
+        mock_settings.return_value.GEMINI_API_KEY = ""
+        mock_claude_client = AsyncMock()
+        mock_claude_cls.return_value = mock_claude_client
+        mock_claude_client.messages.create = AsyncMock(
+            return_value=_mock_claude_response(response_data)
+        )
+
+        result = await analyze_photo_with_ai(PHOTO_URL, BRAND_PROFILE, photo_key="uploads/test.jpg")
+
+    mock_claude_cls.assert_called_once()
+    assert result["quality"] == "good"

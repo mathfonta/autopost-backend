@@ -21,6 +21,7 @@ os IDs de publicação para rastreamento de métricas.
 - Métricas coletadas 24h após publicação (task separada)
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -55,6 +56,35 @@ def _raise_if_error(data: dict, operation: str) -> None:
         )
 
 
+async def _wait_for_container_finished(
+    client: httpx.AsyncClient,
+    container_id: str,
+    access_token: str,
+    label: str,
+    retries: int = 12,
+    interval: float = 5.0,
+) -> None:
+    """
+    Faz polling de um container de mídia até status_code=FINISHED.
+
+    Levanta RuntimeError em caso de ERROR ou timeout após `retries` tentativas.
+    """
+    for attempt in range(retries):
+        await asyncio.sleep(interval)
+        status_resp = await client.get(
+            f"{GRAPH_BASE}/{container_id}",
+            params={"fields": "status_code,status", "access_token": access_token},
+        )
+        status_data = status_resp.json()
+        status_code = status_data.get("status_code", "")
+        logger.info(f"[publisher] {label} id={container_id} status={status_code} attempt={attempt + 1}/{retries}")
+        if status_code == "FINISHED":
+            return
+        if status_code == "ERROR":
+            raise RuntimeError(f"{label} {container_id} falhou no processamento: {status_data.get('status', 'erro desconhecido')}")
+    raise RuntimeError(f"Timeout: {label} {container_id} não processado pela Meta em {retries * interval:.0f}s")
+
+
 # ─── Instagram ───────────────────────────────────────────────────────────────
 
 async def publish_to_instagram(
@@ -85,19 +115,7 @@ async def publish_to_instagram(
         logger.info(f"[publisher] container criado creation_id={creation_id}")
 
         # Aguarda container ficar FINISHED (Instagram processa a imagem)
-        import asyncio as _asyncio
-        for _ in range(12):
-            await _asyncio.sleep(5)
-            status_resp = await client.get(
-                f"{GRAPH_BASE}/{creation_id}",
-                params={"fields": "status_code", "access_token": access_token},
-            )
-            status_code = status_resp.json().get("status_code", "")
-            logger.info(f"[publisher] container status={status_code}")
-            if status_code == "FINISHED":
-                break
-            if status_code == "ERROR":
-                raise RuntimeError(f"Container falhou no processamento: {status_resp.json()}")
+        await _wait_for_container_finished(client, creation_id, access_token, label="container")
 
         # Etapa 2 — publica
         resp = await client.post(
@@ -137,8 +155,6 @@ async def publish_carousel_to_instagram(
     Returns:
         dict com: post_id, permalink
     """
-    import asyncio as _asyncio
-
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         # Etapa 1 — cria containers de item
         item_ids = []
@@ -158,18 +174,7 @@ async def publish_carousel_to_instagram(
 
         # Aguarda todos os items ficarem FINISHED
         for item_id in item_ids:
-            for _ in range(12):
-                await _asyncio.sleep(5)
-                status_resp = await client.get(
-                    f"{GRAPH_BASE}/{item_id}",
-                    params={"fields": "status_code", "access_token": access_token},
-                )
-                sc = status_resp.json().get("status_code", "")
-                logger.info(f"[publisher] carousel item={item_id} status={sc}")
-                if sc == "FINISHED":
-                    break
-                if sc == "ERROR":
-                    raise RuntimeError(f"Carousel item {item_id} falhou no processamento")
+            await _wait_for_container_finished(client, item_id, access_token, label="carousel item")
 
         # Etapa 2 — cria container carousel
         resp = await client.post(
@@ -187,18 +192,7 @@ async def publish_carousel_to_instagram(
         logger.info(f"[publisher] carousel container criado id={carousel_id}")
 
         # Aguarda carousel ficar FINISHED
-        for _ in range(12):
-            await _asyncio.sleep(5)
-            status_resp = await client.get(
-                f"{GRAPH_BASE}/{carousel_id}",
-                params={"fields": "status_code", "access_token": access_token},
-            )
-            sc = status_resp.json().get("status_code", "")
-            logger.info(f"[publisher] carousel container status={sc}")
-            if sc == "FINISHED":
-                break
-            if sc == "ERROR":
-                raise RuntimeError(f"Carousel container falhou: {status_resp.json()}")
+        await _wait_for_container_finished(client, carousel_id, access_token, label="carousel container")
 
         # Etapa 3 — publica
         resp = await client.post(
@@ -241,8 +235,6 @@ async def publish_reel_to_instagram(
     Returns:
         dict com: post_id, permalink
     """
-    import asyncio as _asyncio
-
     async with httpx.AsyncClient(timeout=60.0) as client:
         # Etapa 1 — cria container de Reel
         resp = await client.post(
@@ -261,21 +253,7 @@ async def publish_reel_to_instagram(
         logger.info(f"[publisher] reel container criado creation_id={creation_id}")
 
         # Etapa 2 — aguarda processamento (vídeo é mais lento que imagem)
-        for attempt in range(30):
-            await _asyncio.sleep(10)
-            status_resp = await client.get(
-                f"{GRAPH_BASE}/{creation_id}",
-                params={"fields": "status_code,status", "access_token": access_token},
-            )
-            status_data = status_resp.json()
-            status_code = status_data.get("status_code", "")
-            logger.info(f"[publisher] reel status={status_code} attempt={attempt + 1}/30")
-            if status_code == "FINISHED":
-                break
-            if status_code == "ERROR":
-                raise RuntimeError(f"Reel falhou no processamento: {status_data.get('status', 'erro desconhecido')}")
-        else:
-            raise RuntimeError("Timeout: vídeo não processado pela Meta em 5 minutos")
+        await _wait_for_container_finished(client, creation_id, access_token, label="reel", retries=30, interval=10.0)
 
         # Etapa 3 — publica
         resp = await client.post(
@@ -317,11 +295,9 @@ async def publish_story_to_instagram(
     Returns:
         dict com: post_id (permalink não disponível para Stories)
     """
-    import asyncio as _asyncio
-
     media_type = "VIDEO" if is_video else "IMAGE"
     poll_retries = 30 if is_video else 12
-    poll_interval = 10 if is_video else 5
+    poll_interval = 10.0 if is_video else 5.0
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # Etapa 1 — cria container de Story
@@ -344,21 +320,9 @@ async def publish_story_to_instagram(
         logger.info(f"[publisher] story container criado creation_id={creation_id} is_video={is_video}")
 
         # Etapa 2 — aguarda processamento
-        for attempt in range(poll_retries):
-            await _asyncio.sleep(poll_interval)
-            status_resp = await client.get(
-                f"{GRAPH_BASE}/{creation_id}",
-                params={"fields": "status_code,status", "access_token": access_token},
-            )
-            status_data = status_resp.json()
-            status_code = status_data.get("status_code", "")
-            logger.info(f"[publisher] story status={status_code} attempt={attempt + 1}/{poll_retries}")
-            if status_code == "FINISHED":
-                break
-            if status_code == "ERROR":
-                raise RuntimeError(f"Story falhou no processamento: {status_data.get('status', 'erro desconhecido')}")
-        else:
-            raise RuntimeError("Timeout: Story não processada pela Meta")
+        await _wait_for_container_finished(
+            client, creation_id, access_token, label="story", retries=poll_retries, interval=poll_interval
+        )
 
         # Etapa 3 — publica
         resp = await client.post(

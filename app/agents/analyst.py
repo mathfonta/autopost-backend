@@ -21,15 +21,60 @@ import httpx
 
 from app.cerebro.reader import read_patterns
 from app.config import get_settings
+from app.core.ai_parsing import strip_json_fences
 
 logger = logging.getLogger(__name__)
 
 # Modelo mais barato para análise de imagem — Claude Haiku
 MODEL = "claude-haiku-4-5-20251001"
+GEMINI_VISION_MODEL = "gemini-2.5-flash"
 MAX_TOKENS = 1024
 
 # Claude API rejeita imagens base64 acima de 5 MB; usamos 4 MB como margem segura
 CLAUDE_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _resolve_analyst_provider(settings) -> str:
+    """
+    Resolve o provider de análise visual (ANALYST_PROVIDER).
+    Faz fallback para Claude se Gemini estiver selecionado sem GEMINI_API_KEY.
+    """
+    provider = settings.ANALYST_PROVIDER.lower()
+    if provider == "gemini" and not settings.GEMINI_API_KEY:
+        logger.warning("[analyst] ANALYST_PROVIDER=gemini mas GEMINI_API_KEY ausente — usando claude")
+        return "claude"
+    return provider
+
+
+async def _call_gemini_vision(
+    system_prompt: str,
+    user_message: str,
+    images: list[tuple[bytes, str]],
+) -> str:
+    """
+    Chama Gemini com visão para analisar imagens (foto única ou frames de vídeo).
+
+    Args:
+        images: lista de tuplas (bytes, mime_type)
+    """
+    from google import genai
+    from google.genai import types
+
+    settings = get_settings()
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    contents: list = [
+        types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
+        for img_bytes, mime_type in images
+    ]
+    contents.append(user_message)
+
+    response = await client.aio.models.generate_content(
+        model=GEMINI_VISION_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(system_instruction=system_prompt),
+    )
+    return (response.text or "").strip()
 
 
 def _detect_media_type(data: bytes) -> str:
@@ -136,7 +181,7 @@ async def analyze_photo_with_ai(
         ValueError: se resposta não for JSON válido
     """
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    provider = _resolve_analyst_provider(settings)
 
     segment = brand_profile.get("segment", "empresa")
     city = brand_profile.get("city", "")
@@ -160,7 +205,7 @@ async def analyze_photo_with_ai(
     user_message = f"{context}. Analise esta foto para publicação no Instagram.{patterns_context}{context_hint}"
 
     logger.info(
-        f"[analyst] chamando Claude Haiku — url={photo_url[:60]}... "
+        f"[analyst] provider={provider} — url={photo_url[:60]}... "
         f"patterns={'sim' if patterns else 'não'}"
     )
 
@@ -174,44 +219,44 @@ async def analyze_photo_with_ai(
         img_resp.raise_for_status()
         img_bytes = img_resp.content
     img_bytes, media_type = _compress_image_for_claude(img_bytes)
-    img_b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
 
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        timeout=30.0,
-        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": img_b64,
+    if provider == "gemini":
+        raw = await _call_gemini_vision(_SYSTEM_PROMPT, user_message, images=[(img_bytes, media_type)])
+    else:
+        img_b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
+        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        message = await client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            timeout=30.0,
+            system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": img_b64,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": user_message,
-                    },
-                ],
-            }
-        ],
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-    )
+                        {
+                            "type": "text",
+                            "text": user_message,
+                        },
+                    ],
+                }
+            ],
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
+        raw = message.content[0].text.strip()
 
-    raw = message.content[0].text.strip()
     logger.info(f"[analyst] resposta bruta: {raw[:200]}")
 
     try:
-        # Remove markdown code fences se presentes
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
-            cleaned = cleaned.lstrip("json").strip()
+        cleaned = strip_json_fences(raw)
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude retornou JSON inválido: {raw[:300]}") from e
@@ -371,7 +416,7 @@ async def analyze_video_with_ai(
     from app.core.storage import download_from_r2
 
     settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    provider = _resolve_analyst_provider(settings)
 
     segment = brand_profile.get("segment", "empresa")
     city = brand_profile.get("city", "")
@@ -427,38 +472,43 @@ async def analyze_video_with_ai(
     if not transcription:
         logger.info("[analyst-video] sem transcrição — análise apenas visual")
 
-    logger.info(f"[analyst-video] {len(frames)} frames extraídos — chamando Claude Haiku")
+    logger.info(f"[analyst-video] {len(frames)} frames extraídos — provider={provider}")
 
-    # Monta conteúdo multi-imagem
-    content: list[dict] = []
-    for frame_bytes in frames:
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(frame_bytes).decode("utf-8"),
-            },
-        })
-    content.append({"type": "text", "text": user_message})
+    if provider == "gemini":
+        raw = await _call_gemini_vision(
+            _VIDEO_SYSTEM_PROMPT,
+            user_message,
+            images=[(frame_bytes, "image/jpeg") for frame_bytes in frames],
+        )
+    else:
+        # Monta conteúdo multi-imagem
+        content: list[dict] = []
+        for frame_bytes in frames:
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64.standard_b64encode(frame_bytes).decode("utf-8"),
+                },
+            })
+        content.append({"type": "text", "text": user_message})
 
-    message = await client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        timeout=30.0,
-        system=[{"type": "text", "text": _VIDEO_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": content}],
-        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-    )
+        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        message = await client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            timeout=30.0,
+            system=[{"type": "text", "text": _VIDEO_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": content}],
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
+        raw = message.content[0].text.strip()
 
-    raw = message.content[0].text.strip()
     logger.info(f"[analyst-video] resposta bruta: {raw[:200]}")
 
     try:
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
-            cleaned = cleaned.lstrip("json").strip()
+        cleaned = strip_json_fences(raw)
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.warning(f"[analyst-video] JSON inválido: {e} — usando análise mínima")

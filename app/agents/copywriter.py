@@ -11,13 +11,13 @@ Responsabilidades:
 
 import json
 import logging
-import os
 import re
 
 import anthropic
 
 from app.cerebro.reader import read_patterns
 from app.config import get_settings
+from app.core.ai_parsing import strip_json_fences
 
 logger = logging.getLogger(__name__)
 
@@ -410,15 +410,28 @@ _STATIC_LIBRARY = (
 )
 
 
+def _resolve_copy_provider(settings) -> str:
+    """
+    Resolve o provider de geração de copy (COPY_PROVIDER).
+    Faz fallback para Claude se Gemini estiver selecionado sem GEMINI_API_KEY —
+    evita outage total de geração de conteúdo se a chave sumir em produção.
+    """
+    provider = settings.COPY_PROVIDER.lower()
+    if provider == "gemini" and not settings.GEMINI_API_KEY:
+        logger.warning("[copywriter] COPY_PROVIDER=gemini mas GEMINI_API_KEY ausente — usando claude")
+        return "claude"
+    return provider
+
+
 async def _call_gemini_for_copy(user_message: str) -> str:
     """Chama Gemini 2.5 Flash para gerar copy — provider alternativo ao Claude."""
     from google import genai
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    settings = get_settings()
+    if not settings.GEMINI_API_KEY:
         raise ValueError("[copywriter/gemini] GEMINI_API_KEY não configurada")
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
     full_prompt = f"{_SYSTEM_PROMPT}\n\n{_STATIC_LIBRARY}\n\n{user_message}"
 
     response = await client.aio.models.generate_content(
@@ -455,7 +468,7 @@ async def generate_copy_with_ai(
         ValueError: se resposta não for JSON válido
     """
     settings = get_settings()
-    provider = settings.COPY_PROVIDER.lower()
+    provider = _resolve_copy_provider(settings)
     logger.info(f"[copywriter] COPY_PROVIDER={settings.COPY_PROVIDER!r} → usando provider={provider!r}")
 
     # Monta contexto do cliente
@@ -683,10 +696,7 @@ FOTO:
     logger.info(f"[copywriter] resposta bruta ({provider}): {raw[:200]}")
 
     try:
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("```")[-2] if "```" in cleaned[3:] else cleaned[3:]
-            cleaned = cleaned.lstrip("json").strip()
+        cleaned = strip_json_fences(raw)
         result = json.loads(cleaned)
         # Gemini pode retornar lista — pegar primeiro elemento
         if isinstance(result, list):

@@ -18,3 +18,9 @@ os.environ.setdefault("CLOUDFLARE_R2_ACCESS_KEY", "test-access-key")
 os.environ.setdefault("CLOUDFLARE_R2_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("CLOUDFLARE_R2_ENDPOINT", "https://test.r2.cloudflarestorage.com")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
+# Testes existentes cobrem o path Claude com mocks determinísticos — fixar o
+# provider default aqui evita que testes façam chamadas reais à API Gemini
+# só porque o .env local (fora do controle da suite) tem GEMINI_API_KEY real.
+# Testes dedicados ao path Gemini sobrescrevem isso explicitamente via monkeypatch.
+os.environ.setdefault("COPY_PROVIDER", "claude")
+os.environ.setdefault("ANALYST_PROVIDER", "claude")
