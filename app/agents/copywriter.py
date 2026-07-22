@@ -81,31 +81,34 @@ STRATEGY_PROMPTS: dict[str, str] = {
     # ── Feed Photo (5) ──────────────────────────────────────────────
     "feed_photo__prova_social": (
         "ESTRATÉGIA: Prova Social Visual. "
-        "Hook: 1 linha curta e direta com o resultado (ex: 'Entregue. ✓'). "
+        "Hook: 1 linha curta com o resultado + um indício do 'como' sem revelar por completo "
+        "(ex: 'Entregue. ✓ ...e não foi do jeito que o cliente esperava'). "
         "Corpo: 2-3 linhas contextualizando o trabalho realizado sem exagerar. "
         "CTA suave de contato ou orçamento. Emojis: máximo 2, funcionais."
     ),
     "feed_photo__ancora_de_marca": (
         "ESTRATÉGIA: Âncora de Marca. "
-        "Hook: frase que reforça a identidade ou posicionamento da empresa. "
+        "Hook: 1 frase que revela COMO a empresa decide o que aceita fazer — sem expor o critério completo "
+        "(mecanismo específico, nunca adjetivo genérico tipo 'qualidade' ou 'compromisso'). "
         "Corpo: 1-2 linhas sobre o que a marca representa ou entrega de diferente. "
         "CTA de reconhecimento — convide a seguir ou a conhecer mais. Emojis: 1-2."
     ),
     "feed_photo__curiosidade_pergunta": (
         "ESTRATÉGIA: Curiosidade + Pergunta. "
         "Hook: pergunta ou dado surpreendente do nicho que gera reflexão. "
-        "Corpo: contexto rápido sobre o assunto. "
+        "Corpo: contexto rápido sobre o assunto — revele a resposta só parcialmente, mantendo motivo para comentar. "
         "Encerre com outra pergunta convidando comentário. Tom: conversacional. Emojis: 2-3."
     ),
     "feed_photo__bastidores": (
         "ESTRATÉGIA: Bastidores. "
         "Hook: 'Por trás de...' ou 'O que ninguém vê antes de...'. "
-        "Corpo: descreva o processo, a equipe ou o esforço por trás do trabalho. "
+        "Corpo: descreva o processo, a equipe ou o esforço — prometa 1 detalhe específico sem revelar a técnica completa "
+        "(ex: 'a parte que quase deu errado — e como resolvemos'). "
         "Tom: autêntico e humanizado. CTA: convide a acompanhar o processo. Emojis: 2-3."
     ),
     "feed_photo__hero_shot": (
         "ESTRATÉGIA: Hero Shot — destaque do produto ou serviço. "
-        "Hook: nome do produto/serviço + adjetivo de impacto. "
+        "Hook: nome do produto/serviço + o mecanismo/material específico que o diferencia — nunca um adjetivo de impacto genérico. "
         "Corpo: 1-2 benefícios concretos. CTA direto para orçamento ou compra. "
         "Tom: confiante e orientado à conversão. Emojis: 1-2."
     ),
@@ -115,36 +118,44 @@ STRATEGY_PROMPTS: dict[str, str] = {
         "ESTRATÉGIA: Antes & Depois. "
         "Hook provocativo que destaca o contraste da transformação. "
         "Corpo: narrativa de transformação — mencione o problema inicial e o resultado final. "
+        "No meio, insira uma fascination bullet do tipo 'o detalhe que quase inviabilizou o projeto' — "
+        "sustenta curiosidade entre o início emocional e o fim celebrativo, sem entregar tudo de uma vez. "
         "CTA final: convide para conhecer o processo ou solicitar orçamento. "
         "Tom: storytelling emocional no início, técnico no meio, celebrativo no fim."
     ),
     "carousel__passo_a_passo": (
         "ESTRATÉGIA: Passo a Passo Educativo. "
-        "Hook: promessa do que o leitor vai aprender (ex: 'X passos para...'). "
+        "Hook: promessa do que o leitor vai aprender + uma fascination bullet apontando o passo mais negligenciado "
+        "(ex: 'o passo 3 é o que 90% pula — e paga caro depois'), sem revelar qual é. "
         "Corpo: introdução clara à sequência de slides. "
         "CTA: 'Salva esse post' ou 'Compartilha com quem precisa'. Tom: didático e acessível."
     ),
     "carousel__erros_mitos": (
         "ESTRATÉGIA: Erros / Mitos. "
         "Hook provocativo: 'X erros que...' ou 'Pare de acreditar que...'. "
-        "Corpo: contexto do problema que o carrossel vai resolver. "
+        "Corpo: contexto do problema que o carrossel vai resolver — cada erro citado deve ter uma consequência "
+        "específica e real associada, nunca uma generalização vaga. "
         "CTA: 'Desliza para não errar mais'. Tom: corretivo mas empático, nunca arrogante."
     ),
     "carousel__case_estudo": (
         "ESTRATÉGIA: Case / Estudo de Caso. "
         "Hook: apresente o cliente e o desafio inicial. "
-        "Corpo: estrutura problema → solução → resultado com dados quando disponíveis. "
+        "Corpo: estrutura problema → solução → resultado com dados quando disponíveis. Se houver uma reviravolta real "
+        "no meio do projeto, use-a como fascination bullet (ex: 'o resultado só apareceu depois de uma mudança que "
+        "ninguém esperava') para sustentar o engajamento até o fim. "
         "CTA: 'Quer o mesmo resultado? Me chama no DM'. Tom: técnico e confiável."
     ),
     "carousel__comparativo": (
         "ESTRATÉGIA: Comparativo. "
-        "Hook: pergunta de escolha que engaja ('Qual você prefere?'). "
+        "Hook: pergunta de escolha que engaja ('Qual você prefere?'), revelando só 1 critério de comparação — "
+        "guarde o restante para os slides seguintes. "
         "Corpo: introdução neutra ao comparativo dos slides. "
         "CTA: 'Desliza e decide' ou 'Comenta qual você escolheria'. Tom: neutro e informativo."
     ),
     "carousel__checklist": (
         "ESTRATÉGIA: Checklist / Guia de Referência. "
-        "Hook: promessa de utilidade prática ('Salva antes de fechar'). "
+        "Hook: promessa de utilidade prática + fascination bullet sobre o item mais esquecido e mais caro de corrigir depois "
+        "(ex: 'item 4 é o que mais gente esquece'), sem revelar qual é. "
         "Corpo: introdução à lista com o tema central. "
         "CTA obrigatório: 'Salva esse post — você vai querer rever'. Tom: utilitário e direto."
     ),
@@ -303,6 +314,16 @@ Regras das hashtags:
 3. SINAIS QUE ESCALAM: Estruture a copy para gerar salvamentos (listas, dicas práticas, referências) e compartilhamentos (opinião forte, identificação). Saves e shares escalam o alcance — não likes. Quando o formato permitir, inclua CTA orientado a salvar: "Salva esse post para quando precisar."
 
 4. LINGUAGEM PARA DESCONHECIDOS: Escreva para quem decide em 2 segundos se fica ou sai. Sem jargão do nicho. Clareza vence autoridade. Um completo desconhecido deve entender o valor do conteúdo sem contexto prévio.
+
+5. MECANISMO ESPECÍFICO, NUNCA ADJETIVO GENÉRICO: Ancore o diferencial num mecanismo concreto — a técnica, o material, o processo específico usado — nunca em "qualidade", "compromisso" ou "excelência" isolados.
+   Certo: "Argamassa polimérica em vez da tradicional — por isso não trinca no primeiro verão." ✓
+   Errado: "Trabalho com qualidade e compromisso." ✗
+
+6. AUTORIDADE SEM AUTOPROMOÇÃO: Quando o contexto fornecer tempo de mercado, número de projetos ou especialização, mencione UMA vez de forma factual — nunca como alarde.
+   Certo: "12 anos entregando reforma em Floripa — isso ensina o que não fazer." ✓
+   Errado: "Somos os melhores da região." ✗
+
+7. RECONHECIMENTO DO PROBLEMA ANTES DA SOLUÇÃO: Para formatos de transformação (antes/depois, case, erros/mitos), a primeira metade do corpo deve validar que o leitor reconhece o problema — antes de revelar a solução. O leitor não decidiu que precisa de você; primeiro precisa reconhecer que precisa de algo.
 """
 
 # Sequência de ataque editorial para clientes novos — Story 14.2
