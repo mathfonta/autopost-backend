@@ -133,6 +133,25 @@ async def test_fetch_recent_media_missing_credentials():
     assert result_no_id == []
 
 
+@pytest.mark.asyncio
+async def test_fetch_recent_media_requests_correct_fields_and_limit():
+    """Garante que 'fields' (AC2) e 'limit' (AC5) são de fato enviados na requisição —
+    não só que a função retorna certo quando a API já responde certo."""
+    with respx.mock:
+        route = respx.get(f"https://graph.instagram.com/{IG_ID}/media").mock(
+            return_value=httpx.Response(200, json=MOCK_MEDIA_RESPONSE)
+        )
+        await fetch_recent_media(IG_ID, TOKEN, limit=7)
+
+    sent_params = route.calls.last.request.url.params
+    assert sent_params["limit"] == "7"
+    for field in (
+        "id", "caption", "media_type", "media_url", "thumbnail_url",
+        "permalink", "timestamp", "like_count", "comments_count",
+    ):
+        assert field in sent_params["fields"]
+
+
 # ─── fetch_account_info ─────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -162,3 +181,19 @@ async def test_fetch_account_info_failure_returns_none():
         result = await fetch_account_info(IG_ID, TOKEN)
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_account_info_requests_correct_fields():
+    """Garante que os 5 campos de conta/bio (AC6) são de fato solicitados na requisição."""
+    with respx.mock:
+        route = respx.get(f"https://graph.instagram.com/{IG_ID}").mock(
+            return_value=httpx.Response(200, json=MOCK_ACCOUNT_RESPONSE)
+        )
+        await fetch_account_info(IG_ID, TOKEN)
+
+    sent_params = route.calls.last.request.url.params
+    for field in (
+        "username", "biography", "followers_count", "media_count", "profile_picture_url",
+    ):
+        assert field in sent_params["fields"]
