@@ -171,6 +171,24 @@ def _normalize_segment(segment: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _theme_relevance_score(theme: dict, recurring_topics_normalized: list[str]) -> int:
+    """
+    Pontua um tema pelo overlap entre suas tags e os recurring_topics do
+    Agente Scout (Epic 22, Story 22.4). Retorna 0 se não houver
+    recurring_topics — garante que a ordenação fica idêntica à atual
+    quando o Scout não rodou/pulou/falhou (AC3).
+    """
+    if not recurring_topics_normalized:
+        return 0
+    tags_normalized = [_normalize_segment(t) for t in (theme.get("tags") or []) if isinstance(t, str)]
+    return sum(
+        1
+        for topic in recurring_topics_normalized
+        for tag in tags_normalized
+        if topic and tag and (topic in tag or tag in topic)
+    )
+
+
 @router.get("/themes")
 async def list_themes(
     current_client: Client = Depends(get_current_client),
@@ -197,6 +215,17 @@ async def list_themes(
     base_themes     = THEME_LIBRARY[matched_key] if matched_key else THEME_LIBRARY["default"]
     segment_display = matched_key if matched_key else (raw_segment or "geral")
 
+    # Insights do Agente Scout (Epic 22, Story 22.4) — reordena por relevância
+    # dentro do mesmo grupo de used_count. Lista vazia quando ausente/malformado
+    # => relevância sempre 0 => ordenação idêntica à atual (AC3).
+    scout_insights = brand_profile.get("scout_insights") or {}
+    recurring_topics = scout_insights.get("recurring_topics") if isinstance(scout_insights, dict) else None
+    recurring_topics_normalized = (
+        [_normalize_segment(t) for t in recurring_topics if isinstance(t, str)]
+        if isinstance(recurring_topics, list)
+        else []
+    )
+
     # Conta uso de cada tema por este cliente (apenas posts publicados)
     usage_result = await db.execute(
         select(ContentRequest.theme_id, func.count().label("cnt"))
@@ -209,12 +238,15 @@ async def list_themes(
     )
     usage_map: dict[str, int] = {row.theme_id: row.cnt for row in usage_result}
 
-    # Enriquece temas com contagem e ordena: unused (0) primeiro
+    # Enriquece temas com contagem e ordena: unused (0) primeiro,
+    # e dentro do mesmo used_count, mais relevante ao Scout primeiro (Story 22.4)
     enriched = [
         {**t, "used_count": usage_map.get(t["id"], 0)}
         for t in base_themes
     ]
-    enriched.sort(key=lambda t: t["used_count"])
+    enriched.sort(
+        key=lambda t: (t["used_count"], -_theme_relevance_score(t, recurring_topics_normalized))
+    )
 
     logger.info(
         f"[themes] client={current_client.id} segment={segment_display!r} "

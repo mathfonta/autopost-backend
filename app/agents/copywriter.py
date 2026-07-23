@@ -582,6 +582,32 @@ async def generate_copy_with_ai(
     viral_triggers = _VIRAL_TRIGGERS.get(segment_key, _VIRAL_TRIGGERS["default"])
     viral_section = f"\n\nGATILHOS VIRAIS DO NICHO — use um destes ângulos para o hook:\n{viral_triggers}"
 
+    # Injeta insights do Agente Scout (Epic 22, Story 22.4) quando disponíveis —
+    # ENRIQUECE, nunca substitui, o contexto de segmento/tom já declarado pelo cliente.
+    # Defensivo: scout_insights ausente, parcial ou malformado nunca quebra a geração.
+    scout_insights = brand_profile.get("scout_insights") or {}
+    scout_section = ""
+    if isinstance(scout_insights, dict) and scout_insights:
+        refined_niche = scout_insights.get("refined_niche") or ""
+        recurring_topics = scout_insights.get("recurring_topics") or []
+        visual_style = scout_insights.get("visual_style") or ""
+        audience_notes = scout_insights.get("audience_notes") or ""
+        scout_lines = []
+        if refined_niche:
+            scout_lines.append(f"- Nicho real observado nos posts: {refined_niche}")
+        if isinstance(recurring_topics, list) and recurring_topics:
+            scout_lines.append(f"- Temas recorrentes no perfil: {', '.join(str(t) for t in recurring_topics)}")
+        if visual_style:
+            scout_lines.append(f"- Estilo visual predominante: {visual_style}")
+        if audience_notes:
+            scout_lines.append(f"- Público inferido: {audience_notes}")
+        if scout_lines:
+            scout_section = (
+                "\n\nPERFIL REAL DO CLIENTE (análise automática dos posts recentes — Agente Scout):\n"
+                + "\n".join(scout_lines)
+                + "\nUse essas informações para tornar a copy mais específica ao negócio real do cliente."
+            )
+
     # Injeta objetivo da sequência de ataque para clientes novos (Story 14.2)
     attack_section = ""
     if attack_sequence_position is not None and 0 <= attack_sequence_position < 10:
@@ -661,7 +687,7 @@ CLIENTE:
 FOTO:
 - Tipo: {content_label}
 - Descrição: {description}
-- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{marketing_intent_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}{attack_section}
+- Etapa/detalhe: {stage or "não informado"}{extra_section}{user_context_section}{transcript_section}{music_section}{viral_section}{marketing_intent_section}{strategy_section}{intent_section}{patterns_section}{retry_section}{exa_section}{attack_section}{scout_section}
 """
 
     logger.info(

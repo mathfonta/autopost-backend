@@ -17,7 +17,7 @@ SLIDE_STRUCTURE_PROMPT = """Você é um especialista em conteúdo para Instagram
 Gere a estrutura de slides para um carrossel do Instagram sobre o tema: "{theme_title}"
 Descrição: {theme_description}
 Empresa: {company_name}
-Segmento: {segment}
+Segmento: {segment}{scout_context}
 
 REGRAS:
 - Primeiro card: título impactante do tema (máx 60 chars)
@@ -76,11 +76,31 @@ async def generate_slide_structure(
     segment = brand_profile.get("segment", "serviços")
     n_content_slides = theme["slide_count"] - 2  # -1 título -1 CTA
 
+    # Insights do Agente Scout (Epic 22, Story 22.4) — enriquece a geração
+    # quando disponíveis; string vazia (sem mudança de comportamento) caso
+    # contrário. Defensivo: scout_insights ausente/parcial/malformado nunca quebra.
+    scout_insights = brand_profile.get("scout_insights") or {}
+    scout_context = ""
+    if isinstance(scout_insights, dict) and scout_insights:
+        refined_niche = scout_insights.get("refined_niche") or ""
+        recurring_topics = scout_insights.get("recurring_topics") or []
+        scout_lines = []
+        if refined_niche:
+            scout_lines.append(f"Nicho real observado nos posts: {refined_niche}")
+        if isinstance(recurring_topics, list) and recurring_topics:
+            scout_lines.append(f"Temas recorrentes no perfil: {', '.join(str(t) for t in recurring_topics)}")
+        if scout_lines:
+            scout_context = (
+                "\n" + "\n".join(scout_lines)
+                + "\nConsidere esse contexto real ao adaptar a linguagem do carrossel para esta empresa."
+            )
+
     prompt = SLIDE_STRUCTURE_PROMPT.format(
         theme_title=theme["title"],
         theme_description=theme["description"],
         company_name=company_name,
         segment=segment,
+        scout_context=scout_context,
         n_content_slides=n_content_slides,
     )
 
