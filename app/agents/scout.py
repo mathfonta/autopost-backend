@@ -139,7 +139,11 @@ async def _analyze_visual_sample(media: list[dict]) -> str | None:
         raw = await _download_image(url)
         if raw is None:
             continue
-        images.append(_compress_image_for_claude(raw))
+        try:
+            images.append(_compress_image_for_claude(raw))
+        except Exception as e:
+            logger.warning(f"[scout] falha ao processar imagem baixada para análise visual: {e}")
+            continue
 
     if not images:
         logger.warning("[scout] todas as imagens da amostra falharam ao baixar — análise segue só com texto")

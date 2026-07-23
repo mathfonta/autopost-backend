@@ -179,6 +179,26 @@ async def test_analyze_profile_vision_failure_still_produces_report():
 
 
 @pytest.mark.asyncio
+async def test_analyze_profile_image_processing_failure_does_not_raise():
+    """Imagem baixada mas corrompida/ilegível (ex.: _compress_image_for_claude falha ao
+    decodificar) não deve propagar exceção — pula essa imagem e segue a análise (AC7)."""
+    with (
+        patch("app.agents.scout._compress_image_for_claude", side_effect=OSError("imagem corrompida")),
+        patch("app.agents.scout.anthropic.AsyncAnthropic") as mock_client_cls,
+    ):
+        mock_client = AsyncMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.messages.create = AsyncMock(return_value=_mock_json_response(VALID_REPORT_JSON))
+
+        result = await analyze_profile(MEDIA_SAMPLE, BRAND_PROFILE)
+
+    # Nenhuma imagem sobrevive ao processamento -> análise visual é None,
+    # mas a síntese ainda roda com o sinal textual (1 única chamada ao Sonnet).
+    assert result is not None
+    assert mock_client.messages.create.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_analyze_profile_hallucinated_segment_is_nulled():
     """Segmento fora da lista fixa é descartado defensivamente, nunca repassado (AC4)."""
     hallucinated_report = {**VALID_REPORT_JSON, "suggested_segment": "marcenaria premium"}
