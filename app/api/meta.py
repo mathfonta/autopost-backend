@@ -127,6 +127,15 @@ async def meta_callback(
     await db.commit()
 
     logger.info(f"[meta] cliente {client.id} conectou Instagram @{ig_username}")
+
+    # 7. Dispara a análise do Agente Scout em background (Epic 22, Story 22.3).
+    # Nunca deve quebrar o redirect de sucesso — falha ao enfileirar é só logada.
+    try:
+        from app.tasks.pipeline import run_scout_analysis
+        run_scout_analysis.delay(str(client.id))
+    except Exception as exc:
+        logger.warning(f"[meta/callback] falha ao enfileirar análise do Scout client_id={client.id}: {exc}")
+
     return RedirectResponse(
         url=f"{frontend_url}/onboarding?connected=true&username={ig_username}",
         status_code=302,

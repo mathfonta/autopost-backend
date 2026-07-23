@@ -148,7 +148,52 @@ def test_callback_success():
             return_value=httpx.Response(200, json=MOCK_IG_USER_RESP)
         )
 
-        with patch("app.api.meta.get_settings", return_value=_mock_settings()):
+        with (
+            patch("app.api.meta.get_settings", return_value=_mock_settings()),
+            patch("app.tasks.pipeline.run_scout_analysis.delay") as mock_scout_delay,
+        ):
+            with TestClient(app, follow_redirects=False) as client:
+                response = client.get(f"/meta/callback?code=auth-code-abc&state={state}")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert "connected=true" in location
+    assert "username=empresa_teste_ig" in location
+    # Story 22.3 — dispara a análise do Scout em background no sucesso do OAuth
+    mock_scout_delay.assert_called_once_with(str(CLIENT_ID))
+
+
+def test_callback_success_survives_scout_enqueue_failure():
+    """Falha ao enfileirar a análise do Scout NÃO pode quebrar o redirect de
+    sucesso do OAuth (Story 22.3, AC5) — mesmo espírito de robustez da 12.4."""
+    client_mock = _fake_client()
+    state = _make_state()
+
+    async def _db_override():
+        yield _make_db(client_mock)
+
+    app.dependency_overrides[get_db] = _db_override
+
+    with respx.mock:
+        respx.post("https://api.instagram.com/oauth/access_token").mock(
+            return_value=httpx.Response(200, json={"access_token": "short-token-111"})
+        )
+        respx.get("https://graph.instagram.com/access_token").mock(
+            return_value=httpx.Response(200, json=MOCK_LONG_TOKEN_RESP)
+        )
+        respx.get("https://graph.instagram.com/me").mock(
+            return_value=httpx.Response(200, json=MOCK_IG_USER_RESP)
+        )
+
+        with (
+            patch("app.api.meta.get_settings", return_value=_mock_settings()),
+            patch(
+                "app.tasks.pipeline.run_scout_analysis.delay",
+                side_effect=Exception("Redis indisponível"),
+            ),
+        ):
             with TestClient(app, follow_redirects=False) as client:
                 response = client.get(f"/meta/callback?code=auth-code-abc&state={state}")
 

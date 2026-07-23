@@ -60,6 +60,16 @@ class Client(Base):
         comment="Posição na sequência de ataque editorial (Story 14.2) — 0 a 10",
     )
 
+    # ─── Agente Scout (Epic 22) ──────────────────────────────────
+    scout_report: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True,
+        comment="Relatório bruto do Agente Scout — auditoria/debug (Story 22.3)",
+    )
+    scout_status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False, server_default="pending",
+        comment="Status da análise do Scout: pending | running | done | skipped | failed",
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )

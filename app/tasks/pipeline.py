@@ -819,6 +819,93 @@ def renew_meta_tokens(self) -> str:
         raise self.retry(exc=exc, countdown=3600)
 
 
+# ─── Task: Agente Scout (Epic 22, Story 22.3) ──────────────────
+
+async def _run_scout_analysis_async(client_id: str) -> str:
+    """
+    Busca a mídia recente do cliente (Story 22.1), sintetiza o ScoutReport
+    (Story 22.2) e mescla de forma ADITIVA no brand_profile — nunca
+    sobrescreve os campos declarados pelo usuário (segment, tone,
+    company_name, city).
+
+    Retorna uma string de status para log/depuração (não é o contrato
+    público da task — só usado internamente e em testes).
+    """
+    from app.core.database import WorkerSessionLocal
+    from app.models.client import Client
+    from app.tools.instagram_media import fetch_recent_media
+    from app.agents.scout import analyze_profile
+
+    uid = uuid.UUID(client_id)
+
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(select(Client).where(Client.id == uid))
+        client = result.scalar_one_or_none()
+        if not client:
+            logger.warning(f"[scout_analysis] client_id={client_id} não encontrado")
+            return "client_not_found"
+
+        # Guarda defensiva: cliente pode ter desconectado o Instagram entre
+        # o enqueue (no callback OAuth) e a execução real da task.
+        if not client.instagram_business_id or not client.meta_access_token:
+            client.scout_status = "skipped"
+            await db.commit()
+            logger.info(f"[scout_analysis] client_id={client_id} sem conexão Instagram ativa — pulado")
+            return "skipped_no_connection"
+
+        client.scout_status = "running"
+        await db.commit()
+
+        try:
+            media = await fetch_recent_media(client.instagram_business_id, client.meta_access_token)
+            report = await analyze_profile(media, client.brand_profile or {})
+        except Exception as exc:
+            client.scout_status = "failed"
+            await db.commit()
+            logger.error(f"[scout_analysis] falha inesperada client_id={client_id}: {exc}")
+            return "failed"
+
+        if report is None:
+            client.scout_status = "skipped"
+            await db.commit()
+            logger.info(f"[scout_analysis] client_id={client_id} sem relatório (mídia vazia ou falha) — pulado")
+            return "skipped_no_report"
+
+        # Merge aditivo (AC3/AC4): reatribui um dict NOVO — mutar brand_profile
+        # in-place não seria detectado pelo SQLAlchemy (coluna JSONB sem
+        # MutableDict configurado) e o commit não persistiria a mudança.
+        brand_profile = dict(client.brand_profile or {})
+        brand_profile["scout_insights"] = report
+        client.brand_profile = brand_profile
+        client.scout_report = report
+        client.scout_status = "done"
+        await db.commit()
+
+        logger.info(
+            f"[scout_analysis] client_id={client_id} concluído — "
+            f"niche={report.get('refined_niche')!r} confidence={report.get('confidence')}"
+        )
+        return "done"
+
+
+@celery_app.task(bind=True, name="pipeline.run_scout_analysis", max_retries=1)
+def run_scout_analysis(self, client_id: str) -> str:
+    """
+    Analisa o perfil real do Instagram do cliente e enriquece o brand_profile
+    (Epic 22 — Agente Scout). Disparada de forma assíncrona logo após a
+    conexão OAuth bem-sucedida (app/api/meta.py:meta_callback) — nunca
+    bloqueia o onboarding.
+    """
+    logger.info(f"[scout_analysis] iniciando client_id={client_id}")
+    try:
+        result = _run_sync(_run_scout_analysis_async(client_id))
+        logger.info(f"[scout_analysis] concluído client_id={client_id} — {result}")
+        return result
+    except Exception as exc:
+        logger.error(f"[scout_analysis] erro geral client_id={client_id}: {exc}")
+        raise self.retry(exc=exc, countdown=600)
+
+
 # ─── Task 13.4: Weekly Intelligence (Celery Beat) ──────────
 
 @celery_app.task(bind=True, name="pipeline.generate_weekly_intelligence", max_retries=1)
