@@ -171,22 +171,43 @@ def _normalize_segment(segment: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+_RELEVANCE_STEM_LEN = 6  # aproxima radical da palavra em português (planejaDAS ~ planejaMENTO)
+
+
 def _theme_relevance_score(theme: dict, recurring_topics_normalized: list[str]) -> int:
     """
     Pontua um tema pelo overlap entre suas tags e os recurring_topics do
     Agente Scout (Epic 22, Story 22.4). Retorna 0 se não houver
     recurring_topics — garante que a ordenação fica idêntica à atual
     quando o Scout não rodou/pulou/falhou (AC3).
+
+    Comparação por PALAVRA (não pela frase inteira) usando um prefixo de
+    6 caracteres como radical aproximado: recurring_topics do Scout são
+    frases (ex.: "cozinhas planejadas"), enquanto as tags do THEME_LIBRARY
+    são palavras soltas (ex.: "planejamento") — comparar a frase inteira
+    contra a tag quase nunca bate, mesmo quando semanticamente relacionadas
+    (a inflexão "planejaDAS" vs "planejaMENTO" já quebra um match exato ou
+    por substring de frase completa).
     """
     if not recurring_topics_normalized:
         return 0
     tags_normalized = [_normalize_segment(t) for t in (theme.get("tags") or []) if isinstance(t, str)]
-    return sum(
-        1
+    if not tags_normalized:
+        return 0
+
+    topic_stems = {
+        w[:_RELEVANCE_STEM_LEN]
         for topic in recurring_topics_normalized
+        for w in topic.split()
+        if len(w) >= _RELEVANCE_STEM_LEN
+    }
+    tag_stems = {
+        w[:_RELEVANCE_STEM_LEN]
         for tag in tags_normalized
-        if topic and tag and (topic in tag or tag in topic)
-    )
+        for w in tag.split()
+        if len(w) >= _RELEVANCE_STEM_LEN
+    }
+    return len(topic_stems & tag_stems)
 
 
 @router.get("/themes")

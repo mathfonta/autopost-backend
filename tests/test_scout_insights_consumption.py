@@ -218,6 +218,30 @@ def test_theme_relevance_score_counts_tag_overlap():
         _theme_relevance_score(theme_irrelevant, topics_normalized)
 
 
+def test_theme_relevance_score_matches_realistic_multiword_scout_phrase():
+    """Regressão: recurring_topics do Scout são FRASES (ex.: 'cozinhas planejadas'),
+    não palavras soltas como as tags do THEME_LIBRARY (ex.: 'planejamento'). A
+    comparação por palavra/radical deve encontrar esse overlap mesmo com
+    inflexão diferente (planejaDAS vs planejaMENTO) — substring da frase
+    inteira NÃO encontraria (validado: 'cozinhas planejadas' não é substring
+    nem contém 'planejamento')."""
+    theme = {"id": "cc_antes_assinar", "tags": ["contratação", "segurança", "dicas"]}
+    theme_planejamento = {"id": "cc_algum_tema", "tags": ["planejamento", "orçamento"]}
+    topics_normalized = ["cozinhas planejadas", "processo de marcenaria"]
+
+    assert _theme_relevance_score(theme_planejamento, topics_normalized) > 0
+    assert _theme_relevance_score(theme, topics_normalized) == 0
+
+
+def test_theme_relevance_score_ignores_short_words_to_avoid_false_positives():
+    """Palavras curtas (< 6 chars) não entram na comparação — evita que um
+    radical genérico como 'ia' combine com qualquer tag que o contenha."""
+    theme = {"id": "x", "tags": ["garantia", "premiação"]}
+    topics_normalized = ["ia"]  # topic degenerado/curto, hipotético
+
+    assert _theme_relevance_score(theme, topics_normalized) == 0
+
+
 def test_theme_relevance_score_handles_missing_tags():
     """AC4 — tema sem campo 'tags' não quebra o cálculo."""
     theme = {"id": "sem-tags"}
