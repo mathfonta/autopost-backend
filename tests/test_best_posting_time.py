@@ -72,7 +72,7 @@ async def test_best_posting_time_uses_historico_when_enough_data():
 @pytest.mark.asyncio
 async def test_best_posting_time_density_guard_falls_through():
     """AC3 — hora vencedora com só 1 post (mesmo com >=5 posts totais) não conta;
-    sem Exa disponível, cai no fallback estático."""
+    sem Exa disponível, cai em sem_dados (nenhuma fonte real)."""
     from app.api.insights import get_best_posting_time
 
     posts = [
@@ -87,8 +87,10 @@ async def test_best_posting_time_density_guard_falls_through():
 
     result = await get_best_posting_time(format=None, current_client=client, db=db)
 
-    assert result.fonte == "fallback"
+    assert result.fonte == "sem_dados"
     assert result.confianca == "baixa"
+    assert result.horario is None
+    assert result.mensagem
 
 
 @pytest.mark.asyncio
@@ -130,7 +132,7 @@ async def test_best_posting_time_exa_matches_despite_case_difference():
 
 @pytest.mark.asyncio
 async def test_best_posting_time_fallback_when_no_data():
-    """AC5 — sem histórico suficiente e sem Exa → fallback _DEFAULT_TIMES por segmento."""
+    """AC5 — sem histórico suficiente e sem Exa → sem_dados, sem inventar horário."""
     from app.api.insights import get_best_posting_time
 
     db = _mock_db([], weekly_suggested_time=None)
@@ -138,14 +140,15 @@ async def test_best_posting_time_fallback_when_no_data():
 
     result = await get_best_posting_time(format=None, current_client=client, db=db)
 
-    assert result.fonte == "fallback"
+    assert result.fonte == "sem_dados"
     assert result.confianca == "baixa"
-    assert result.horario == "18:00"  # _DEFAULT_TIMES["construção civil"]
+    assert result.horario is None
+    assert result.mensagem
 
 
 @pytest.mark.asyncio
-async def test_best_posting_time_fallback_unknown_segment_uses_default():
-    """Segmento fora da tabela usa _DEFAULT_TIMES["default"]."""
+async def test_best_posting_time_no_data_regardless_of_segment():
+    """Sem fonte real disponível, sem_dados independe do segmento — nunca inventa horário."""
     from app.api.insights import get_best_posting_time
 
     db = _mock_db([], weekly_suggested_time=None)
@@ -153,5 +156,5 @@ async def test_best_posting_time_fallback_unknown_segment_uses_default():
 
     result = await get_best_posting_time(format=None, current_client=client, db=db)
 
-    assert result.fonte == "fallback"
-    assert result.horario == "19:00"  # _DEFAULT_TIMES["default"]
+    assert result.fonte == "sem_dados"
+    assert result.horario is None

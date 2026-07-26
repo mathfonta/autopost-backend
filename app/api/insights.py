@@ -17,7 +17,6 @@ from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.instagram_analytics import get_instagram_analytics_30d
-from app.agents.copywriter import _DEFAULT_TIMES
 from app.core.auth import get_current_client
 from app.data.theme_library import THEME_LIBRARY
 from app.core.database import get_db
@@ -132,7 +131,8 @@ async def get_best_posting_time(
     Sugere o melhor horário para publicar, em cascata (Epic 19, Story 19.3):
     1. Histórico do próprio cliente — posts publicados com métricas (>= _MIN_HISTORY_POSTS)
     2. Exa semanal — boas práticas do nicho (WeeklyContext.suggested_time)
-    3. Fallback estático por segmento (_DEFAULT_TIMES, mesma tabela do copywriter)
+    3. Sem fonte real disponível: retorna fonte="sem_dados" com uma mensagem
+       explicando a ausência de dados, em vez de inventar um horário estático.
 
     `format` (content_type) é aceito para uso futuro (refinar por formato); a v1
     agrega o histórico geral do cliente, dado o baixo volume de dados por formato.
@@ -205,9 +205,21 @@ async def get_best_posting_time(
         logger.info(f"[insights/best-posting-time] client={current_client.id} fonte=exa hora={exa_time}")
         return BestPostingTimeResponse(horario=exa_time, fonte="exa", confianca="media")
 
-    fallback_time = _DEFAULT_TIMES.get(segment.lower().strip(), _DEFAULT_TIMES["default"])
-    logger.info(f"[insights/best-posting-time] client={current_client.id} fonte=fallback hora={fallback_time}")
-    return BestPostingTimeResponse(horario=fallback_time, fonte="fallback", confianca="baixa")
+    # Sem histórico suficiente e sem Exa para o segmento: nenhuma fonte real
+    # de dados disponível. Não apresenta um horário estático como se fosse
+    # uma recomendação analisada — informa a real ausência de dados.
+    logger.info(f"[insights/best-posting-time] client={current_client.id} fonte=sem_dados segment={segment!r}")
+    return BestPostingTimeResponse(
+        horario=None,
+        fonte="sem_dados",
+        confianca="baixa",
+        mensagem=(
+            "Ainda não temos dados suficientes para recomendar um horário: "
+            "faltam posts publicados com métricas coletadas no seu histórico, "
+            "e ainda não há pesquisa de mercado para o seu segmento. "
+            "Escolha o horário que preferir — a sugestão melhora conforme você publica mais."
+        ),
+    )
 
 
 def _current_monday() -> date:
