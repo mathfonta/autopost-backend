@@ -941,6 +941,11 @@ def generate_weekly_intelligence(self) -> str:
     Task Celery Beat — toda segunda às 07:00 (America/Sao_Paulo).
     Busca tendências da semana no Exa, gera resumo com Gemini e salva em weekly_context.
     Se EXA_PROVIDER=disabled: encerra sem fazer nada.
+
+    Story 27.3: dispatcher de fan-out — gera um WeeklyContext por segmento
+    distinto de cliente ativo (não mais um único global). Guardrail de custo
+    via MAX_SEGMENTS_PER_RUN (NFR-1) e falha isolada por segmento (NFR-2):
+    um segmento com erro não impede o processamento dos demais.
     """
     import os
     from app.tools.exa_search import search_exa_raw
@@ -951,60 +956,90 @@ def generate_weekly_intelligence(self) -> str:
         logger.info("[weekly-intel] EXA_PROVIDER=disabled — pulando")
         return "skipped"
 
-    queries = [
-        "construção civil Brasil notícias semana",
-        "tendências acabamento revestimento 2025",
-        "mercado imobiliário Florianópolis Santa Catarina",
-    ]
+    async def _collect_for_segment(segment: str) -> str:
+        """Coleta e persiste o WeeklyContext de UM segmento. Exceções propagam
+        para o caller isolar a falha (não capturar aqui)."""
+        queries = await _generate_segment_queries(segment)
 
-    # Busca dedicada para horário de postagem (Epic 19, Story 19.3) — evergreen,
-    # NÃO é notícia da semana, por isso janela de busca bem maior (days_back).
-    # Mantida separada das queries de tendência de mercado acima para não
-    # misturar sinal: o Gemini só deve extrair horário destes snippets, nunca
-    # dos snippets de notícia (que não têm relação com horário de engajamento).
-    posting_time_query = "melhor horário para postar no Instagram construção civil Brasil"
-
-    async def _run():
         all_snippets: list[str] = []
         for q in queries:
             snippets = await search_exa_raw(q, days_back=7)
             all_snippets.extend(snippets)
-            logger.info(f"[weekly-intel] query={q!r} snippets={len(snippets)}")
+            logger.info(f"[weekly-intel] segment={segment!r} query={q!r} snippets={len(snippets)}")
 
+        # Busca dedicada para horário de postagem (Epic 19, Story 19.3) — evergreen,
+        # NÃO é notícia da semana, por isso janela de busca bem maior (days_back).
+        # Mantida separada das queries de tendência de mercado acima para não
+        # misturar sinal: o Gemini só deve extrair horário destes snippets, nunca
+        # dos snippets de notícia (que não têm relação com horário de engajamento).
+        posting_time_query = f"melhor horário para postar no Instagram {segment} Brasil"
         posting_time_snippets = await search_exa_raw(posting_time_query, days_back=365)
         logger.info(
-            f"[weekly-intel] query={posting_time_query!r} snippets={len(posting_time_snippets)}"
+            f"[weekly-intel] segment={segment!r} query={posting_time_query!r} "
+            f"snippets={len(posting_time_snippets)}"
         )
-        suggested_time = await _extract_suggested_time(posting_time_snippets)
+        suggested_time = await _extract_suggested_time(posting_time_snippets, segment)
 
         if not all_snippets:
             if suggested_time:
                 # Sem tendências de mercado, mas com sinal de horário — ainda
                 # vale persistir para a Story 19.3 poder consumir.
                 await _save_weekly_context(
-                    segment="Construção civil",
+                    segment=segment,
                     raw_snippets=[],
                     summary="",
                     hashtags=[],
                     suggested_time=suggested_time,
                 )
-            logger.info("[weekly-intel] nenhum snippet de tendência encontrado — encerrando")
+            logger.info(f"[weekly-intel] segment={segment!r} nenhum snippet de tendência — encerrando")
             return "no_snippets"
 
-        summary = await _summarize_snippets(all_snippets)
+        summary = await _summarize_snippets(all_snippets, segment)
         hashtags = _extract_weekly_hashtags(all_snippets)
         await _save_weekly_context(
-            segment="Construção civil",
+            segment=segment,
             raw_snippets=all_snippets,
             summary=summary,
             hashtags=hashtags,
             suggested_time=suggested_time,
         )
         logger.info(
-            f"[weekly-intel] concluído: {len(all_snippets)} snippets "
+            f"[weekly-intel] segment={segment!r} concluído: {len(all_snippets)} snippets "
             f"summary={len(summary)} chars hashtags={len(hashtags)} suggested_time={suggested_time!r}"
         )
         return f"snippets={len(all_snippets)} hashtags={len(hashtags)}"
+
+    async def _run():
+        segments = await _get_active_segments()
+
+        if not segments:
+            logger.info("[weekly-intel] nenhum segmento ativo encontrado — encerrando")
+            return "no_active_segments"
+
+        max_segments = int(os.getenv("MAX_SEGMENTS_PER_RUN", "50"))
+        total = len(segments)
+        if total > max_segments:
+            logger.warning(
+                f"[weekly-intel] {total} segmentos ativos excede MAX_SEGMENTS_PER_RUN="
+                f"{max_segments} — processando só os {max_segments} com mais clientes ativos"
+            )
+            segments = segments[:max_segments]
+
+        logger.info(f"[weekly-intel] processando {len(segments)} segmento(s) ativo(s) de {total} distinto(s)")
+
+        ok_count = 0
+        error_count = 0
+        for segment, client_count in segments:
+            try:
+                result = await _collect_for_segment(segment)
+                logger.info(f"[weekly-intel] segment={segment!r} clients={client_count} result={result!r}")
+                ok_count += 1
+            except Exception as exc:
+                # Isolamento de falha (NFR-2): erro num segmento não aborta os demais.
+                logger.warning(f"[weekly-intel] falha isolada no segment={segment!r}: {exc}")
+                error_count += 1
+
+        return f"segments_ok={ok_count} segments_error={error_count} segments_total={len(segments)}"
 
     try:
         return _run_sync(_run())
@@ -1013,8 +1048,91 @@ def generate_weekly_intelligence(self) -> str:
         raise self.retry(exc=exc, countdown=3600)
 
 
-async def _summarize_snippets(snippets: list[str]) -> str:
-    """Gera resumo em bullet points dos snippets Exa usando Gemini."""
+async def _get_active_segments() -> list[tuple[str, int]]:
+    """
+    Consulta os segmentos distintos de clientes ativos (`is_active=true` e
+    `brand_profile['segment']` não-vazio), deduplicados por segmento
+    normalizado (Story 27.3, CRIT-3). Retorna [(segmento_bruto, n_clientes)]
+    ordenado por n_clientes desc — usado para priorizar o guardrail
+    MAX_SEGMENTS_PER_RUN quando há mais segmentos que o teto.
+    """
+    from app.core.database import WorkerSessionLocal
+    from app.core.segment import normalize_segment
+    from app.models.client import Client
+    from sqlalchemy import select
+
+    async with WorkerSessionLocal() as db:
+        result = await db.execute(
+            select(Client.brand_profile).where(Client.is_active.is_(True))
+        )
+        raw_segments = [(row[0] or {}).get("segment", "") for row in result.fetchall()]
+
+    groups: dict[str, dict] = {}
+    for raw in raw_segments:
+        if not raw:
+            continue
+        key = normalize_segment(raw)
+        group = groups.setdefault(key, {"raw": raw, "count": 0})
+        group["count"] += 1
+
+    ordered = sorted(groups.values(), key=lambda g: g["count"], reverse=True)
+    return [(g["raw"], g["count"]) for g in ordered]
+
+
+async def _generate_segment_queries(segment: str) -> list[str]:
+    """
+    Gera 3 queries de busca Exa a partir do segmento, via Gemini Flash
+    (Story 27.2). Cada query cobre um arquétipo diferente (validado em
+    research.json R-1): notícia da semana, tendência técnica/de produto,
+    mercado/consumo do segmento.
+
+    Fallback determinístico (nunca bloqueia): se o Gemini falhar, retornar
+    vazio, ou não produzir 3 linhas parseáveis, usa queries template.
+    """
+    import os
+    from google import genai
+
+    fallback = [
+        f"{segment} Brasil notícias semana",
+        f"tendências {segment} Brasil 2026",
+        f"mercado {segment} Brasil",
+    ]
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return fallback
+
+    client = genai.Client(api_key=api_key)
+    prompt = (
+        f"Gere exatamente 3 queries de busca web em português do Brasil para "
+        f"encontrar informações atuais sobre o segmento de mercado '{segment}' no Brasil:\n"
+        "1. Uma query sobre notícias da semana do segmento\n"
+        "2. Uma query sobre tendências de produto ou técnica do segmento\n"
+        "3. Uma query sobre mercado/consumo do segmento\n\n"
+        "Responda APENAS as 3 queries, uma por linha, sem numeração, sem explicação."
+    )
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+        )
+        text = (response.text or "").strip()
+        lines = [line.strip(" -•\t") for line in text.split("\n")]
+        queries = [line for line in lines if line]
+        if len(queries) < 3:
+            logger.warning(
+                f"[weekly-intel] Gemini retornou {len(queries)} query(ies) válidas "
+                f"para segment={segment!r} — usando fallback template"
+            )
+            return fallback
+        return queries[:3]
+    except Exception as e:
+        logger.warning(f"[weekly-intel] falha ao gerar queries via Gemini: {e}")
+        return fallback
+
+
+async def _summarize_snippets(snippets: list[str], segment: str = "Construção civil") -> str:
+    """Gera resumo em bullet points dos snippets Exa usando Gemini, para o segmento informado."""
     import os
     from google import genai
 
@@ -1026,8 +1144,8 @@ async def _summarize_snippets(snippets: list[str]) -> str:
     joined = "\n".join(f"- {s}" for s in snippets[:10])
     prompt = (
         "Você é um analista de conteúdo digital. Resuma em 3-5 bullet points curtos "
-        "(máx 100 chars cada) as principais tendências desta semana para profissionais de "
-        "construção civil e reforma.\n\n"
+        f"(máx 100 chars cada) as principais tendências desta semana para profissionais de "
+        f"{segment}.\n\n"
         f"Dados:\n{joined}\n\n"
         "Formato: um bullet por linha, começando com \u2022"
     )
@@ -1057,10 +1175,11 @@ def _extract_weekly_hashtags(snippets: list[str]) -> list[str]:
     return [f"#{h.lower()}" for h in candidates[:10]]
 
 
-async def _extract_suggested_time(snippets: list[str]) -> str | None:
+async def _extract_suggested_time(snippets: list[str], segment: str = "Construção civil") -> str | None:
     """
     Extrai um horário sugerido (HH:MM) a partir de snippets de busca REAL
-    sobre boas práticas de horário de postagem (Epic 19, Story 19.3).
+    sobre boas práticas de horário de postagem (Epic 19, Story 19.3), para
+    o segmento informado (Story 27.2).
 
     IMPORTANTE: só deve receber snippets da query dedicada de horário —
     nunca os snippets de tendência de mercado, que não têm nenhum sinal
@@ -1085,7 +1204,7 @@ async def _extract_suggested_time(snippets: list[str]) -> str | None:
     joined = "\n".join(f"- {s}" for s in snippets[:10])
     prompt = (
         "Com base SOMENTE nestes resultados de busca sobre horário ideal para "
-        "postar no Instagram no nicho de construção civil no Brasil, responda "
+        f"postar no Instagram no segmento '{segment}' no Brasil, responda "
         "APENAS um horário no formato HH:MM (24h) que os resultados indicam como "
         "melhor horário — sem texto adicional. Se os resultados não indicarem "
         "claramente um horário, responda exatamente 'DESCONHECIDO'.\n\n"
@@ -1113,26 +1232,35 @@ async def _save_weekly_context(
     hashtags: list[str],
     suggested_time: str | None = None,
 ) -> None:
-    """Persiste WeeklyContext no banco para o segmento e semana atual."""
+    """
+    Persiste WeeklyContext no banco para o segmento e semana atual.
+
+    Upsert deduplicado por (week_of, segmento NORMALIZADO) — Story 27.3,
+    CRIT-1: grava o segmento em forma bruta (para exibição no card), mas
+    casa com registros existentes por `normalize_segment`, evitando duas
+    linhas na mesma semana por variação de grafia do mesmo segmento.
+    """
     from datetime import date, timedelta
     from app.core.database import WorkerSessionLocal
+    from app.core.segment import normalize_segment
     from app.models.weekly_context import WeeklyContext
     from sqlalchemy import select
 
     # Segunda-feira da semana atual
     today = date.today()
     week_of = today - timedelta(days=today.weekday())
+    segment_normalized = normalize_segment(segment)
 
     async with WorkerSessionLocal() as db:
-        # Upsert: sobrescreve se já existir registro para (week_of, segment)
         existing = await db.execute(
-            select(WeeklyContext).where(
-                WeeklyContext.week_of == week_of,
-                WeeklyContext.segment == segment,
-            )
+            select(WeeklyContext).where(WeeklyContext.week_of == week_of)
         )
-        wc = existing.scalar_one_or_none()
+        wc = next(
+            (row for row in existing.scalars().all() if normalize_segment(row.segment) == segment_normalized),
+            None,
+        )
         if wc:
+            wc.segment = segment  # grafia mais recente
             wc.raw_snippets = raw_snippets
             wc.summary = summary
             wc.hashtags = hashtags

@@ -33,16 +33,18 @@ logger = logging.getLogger(__name__)
 EXA_BASE_URL = "https://api.exa.ai"
 CACHE_TTL_SECONDS = 86400  # 24h
 
-# Queries semânticas por content_type — mesmo estilo dos _VIRAL_TRIGGERS do copywriter
+# Queries semânticas por content_type — descrevem o ÂNGULO do tipo de post,
+# agnósticas de nicho (Story 27.2). O segmento do cliente é anexado depois
+# por _build_query, então NÃO repetir termos de nicho fixo aqui.
 _CONTENT_TYPE_QUERIES: dict[str, str] = {
-    "obra_realizada":      "acabamento construção civil residencial tendência qualidade",
-    "obra_em_andamento":   "construção civil Brasil materiais inovação canteiro obra",
-    "antes_depois":        "reforma residencial tendência design interiores transformação resultado",
-    "engajamento":         "mercado imobiliário construção civil notícias destaque semana",
-    "bastidores":          "gestão obra equipe construção profissional dia a dia",
-    "reels":               "vídeo construção civil reforma tendência viral engajamento",
-    "story":               "construção civil reforma dica rápida tendência",
-    "carousel":            "passo a passo construção reforma materiais tutorial",
+    "obra_realizada":      "resultado entregue Brasil tendência qualidade",
+    "obra_em_andamento":   "Brasil materiais inovação processo produção",
+    "antes_depois":        "tendência design transformação resultado",
+    "engajamento":         "mercado Brasil notícias destaque semana",
+    "bastidores":          "gestão equipe profissional dia a dia",
+    "reels":               "vídeo Brasil tendência viral engajamento",
+    "story":               "dica rápida tendência Brasil",
+    "carousel":            "passo a passo tutorial Brasil",
 }
 
 
@@ -207,7 +209,7 @@ def _build_query(segment: str, content_type: str) -> str:
     """Monta query semântica baseada no segmento e tipo de conteúdo."""
     base = _CONTENT_TYPE_QUERIES.get(
         content_type,
-        "construção civil tendências mercado",
+        "tendências mercado Brasil",
     )
     return f"{base} {segment} site:br"
 

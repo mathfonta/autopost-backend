@@ -8,7 +8,6 @@ GET /insights/instagram   — métricas orgânicas de conta (30d), cache Redis 6
 
 import json
 import logging
-import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -21,6 +20,7 @@ from app.core.auth import get_current_client
 from app.data.theme_library import THEME_LIBRARY
 from app.core.database import get_db
 from app.core.redis_client import get_redis
+from app.core.segment import normalize_segment as _normalize_segment
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
 from app.models.weekly_context import WeeklyContext
@@ -261,10 +261,6 @@ async def get_instagram_analytics(
     return data
 
 
-def _normalize_segment(segment: str) -> str:
-    """Normaliza segmento para matching: lowercase + remove acentos."""
-    nfkd = unicodedata.normalize("NFKD", segment.lower().strip())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 _RELEVANCE_STEM_LEN = 6  # aproxima radical da palavra em português (planejaDAS ~ planejaMENTO)

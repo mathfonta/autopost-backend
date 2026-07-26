@@ -247,3 +247,41 @@ async def test_success_saves_to_cache():
     call_args = mock_redis.setex.call_args
     assert call_args[0][0] == "exa:trends:Construção civil:obra_realizada"
     assert call_args[0][1] == 86400  # 24h TTL
+
+
+# ─── _build_query — generalização por segmento (Story 27.2) ──────────────────
+
+def test_build_query_contains_segment_and_no_old_niche_bias():
+    """Query composta para um segmento não-construção-civil contém o segmento
+    e não injeta termos fixos de construção civil (acabamento, canteiro obra)."""
+    from app.tools.exa_search import _build_query
+
+    query = _build_query("Moda e vestuário", "obra_realizada")
+
+    assert "Moda e vestuário" in query
+    assert "acabamento" not in query.lower()
+    assert "canteiro" not in query.lower()
+    assert "construção" not in query.lower()
+
+
+def test_build_query_all_content_types_are_niche_agnostic():
+    """Nenhum valor de _CONTENT_TYPE_QUERIES contém termos fixos de construção civil."""
+    from app.tools.exa_search import _CONTENT_TYPE_QUERIES
+
+    banned_terms = ["construção civil", "acabamento", "canteiro", "reforma residencial", "obra"]
+    for content_type, base_query in _CONTENT_TYPE_QUERIES.items():
+        lowered = base_query.lower()
+        for term in banned_terms:
+            assert term not in lowered, (
+                f"_CONTENT_TYPE_QUERIES['{content_type}'] ainda contém termo de nicho fixo: {term!r}"
+            )
+
+
+def test_build_query_unknown_content_type_uses_generic_default():
+    """content_type desconhecido cai no default genérico, não em texto de construção civil."""
+    from app.tools.exa_search import _build_query
+
+    query = _build_query("Odontologia", "tipo_inexistente")
+
+    assert "Odontologia" in query
+    assert "construção" not in query.lower()
