@@ -15,7 +15,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 2000
 _MIN_LOCAL_CONTENT = 200  # mínimo de chars para valer a promoção
 

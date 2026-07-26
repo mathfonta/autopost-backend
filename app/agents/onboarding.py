@@ -18,7 +18,7 @@ from app.core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 500
 ONBOARDING_TTL = 24 * 3600  # 24 horas
 

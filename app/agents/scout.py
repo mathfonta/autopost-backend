@@ -32,7 +32,7 @@ from app.core.ai_parsing import strip_json_fences
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"  # síntese/raciocínio — mesmo modelo de app/agents/onboarding.py
+MODEL = "claude-sonnet-5"  # síntese/raciocínio — mesmo modelo de app/agents/onboarding.py
 VISION_MODEL = "claude-haiku-4-5-20251001"  # análise visual — mesmo modelo de app/agents/analyst.py
 VISION_SAMPLE_SIZE = 6  # sub-amostra para a chamada de visão (custo de token); legendas usam todos os posts
 MAX_TOKENS = 1024

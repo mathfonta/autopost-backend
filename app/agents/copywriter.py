@@ -21,7 +21,7 @@ from app.core.ai_parsing import strip_json_fences
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 2500
 MAX_CAPTION_LONG_CHARS = 1500
 MAX_CAPTION_SHORT_CHARS = 300
