@@ -401,6 +401,31 @@ def retry_generate_copy(self, request_id: str) -> str:
         raise self.retry(exc=exc, countdown=30)
 
 
+# ─── Thumbnail de vídeo (reels/story) ────────────────────────────
+
+async def _generate_video_thumbnail(r2_key: str, request_id: str) -> str | None:
+    """
+    Extrai 1 frame (meio do vídeo) e salva no R2 como thumbnail.jpg.
+    Nunca levanta exceção — thumbnail é conveniência visual, não deve
+    bloquear o post de ir para aprovação se a extração falhar.
+    """
+    from app.agents.analyst import _extract_video_frames_sync
+    from app.core.storage import download_from_r2, upload_to_r2
+
+    try:
+        video_bytes = await download_from_r2(r2_key)
+        frames = await asyncio.to_thread(_extract_video_frames_sync, video_bytes, 1)
+        if not frames:
+            logger.warning(f"[prepare_design] thumbnail: nenhum frame extraído request_id={request_id}")
+            return None
+        thumbnail_key = f"{request_id}/thumbnail.jpg"
+        await upload_to_r2(thumbnail_key, frames[0], "image/jpeg")
+        return thumbnail_key
+    except Exception as e:
+        logger.warning(f"[prepare_design] thumbnail: falha ao gerar request_id={request_id}: {e}")
+        return None
+
+
 # ─── Task 3: Designer ────────────────────────────────────────────
 
 @celery_app.task(bind=True, name="pipeline.prepare_design", max_retries=2)
@@ -425,10 +450,12 @@ def prepare_design(self, request_id: str) -> str:
         # Vídeos não passam pelo Pillow — vão direto para aprovação
         if content_type in ("reels", "story"):
             r2_key = photo_keys[0] if photo_keys else ""
+            thumbnail_key = _run_sync(_generate_video_thumbnail(r2_key, request_id)) if r2_key else None
             design = {
                 "type": "video",
                 "r2_key": r2_key,
                 "video_url": photo_urls[0] if photo_urls else "",
+                "thumbnail_key": thumbnail_key,
             }
             _run_sync(_update_status(
                 request_id,

@@ -290,6 +290,63 @@ def test_prepare_design_card_type():
     assert results[0]["type"] == "card"
 
 
+# ─── prepare_design vídeo (thumbnail) ────────────────────────────
+
+
+def test_prepare_design_video_includes_thumbnail_key():
+    """reels/story: design_result deve incluir thumbnail_key gerado pela extração de frame."""
+    rid = _rid()
+    results = []
+
+    async def fake_update(request_id, status, **kwargs):
+        if "result_data" in kwargs:
+            results.append(kwargs["result_data"])
+
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client_multi("reels")
+
+    async def fake_thumbnail(r2_key, request_id):
+        return f"{request_id}/thumbnail.jpg"
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.tasks.pipeline._generate_video_thumbnail", side_effect=fake_thumbnail),
+    ):
+        result = prepare_design.run(rid)
+
+    assert result == rid
+    assert results
+    assert results[0]["type"] == "video"
+    assert results[0]["thumbnail_key"] == f"{rid}/thumbnail.jpg"
+
+
+def test_prepare_design_video_thumbnail_failure_does_not_block_approval():
+    """Falha na extração de thumbnail (retorna None) não deve impedir o post
+    de seguir para aprovação — é conveniência visual, não requisito."""
+    rid = _rid()
+    call_log = []
+
+    async def fake_update(request_id, status, **kwargs):
+        call_log.append(status)
+
+    async def fake_get_with_client(request_id):
+        return _fake_request_with_client_multi("story")
+
+    async def fake_thumbnail_fails(r2_key, request_id):
+        return None
+
+    with (
+        patch("app.tasks.pipeline._update_status", side_effect=fake_update),
+        patch("app.tasks.pipeline._get_request_with_client", side_effect=fake_get_with_client),
+        patch("app.tasks.pipeline._generate_video_thumbnail", side_effect=fake_thumbnail_fails),
+    ):
+        result = prepare_design.run(rid)
+
+    assert result == rid
+    assert ContentStatus.awaiting_approval in call_log
+
+
 # ─── publish_post ───────────────────────────────────────────────
 
 

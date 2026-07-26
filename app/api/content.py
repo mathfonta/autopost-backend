@@ -82,13 +82,20 @@ def _freshen_urls(req: ContentRequest) -> ContentRequest:
         req.photo_urls = fresh
 
     if req.design_result and req.design_result.get("r2_key"):
-        # Vídeos (reels/story) não geram processed_photo_url — o frontend usa placeholder de vídeo
+        # Vídeos (reels/story) não geram processed_photo_url — usam thumbnail_url (abaixo)
         if req.design_result.get("type") != "video":
             try:
                 fresh = generate_presigned_url(req.design_result["r2_key"], PRESIGNED_URL_TTL)
                 req.design_result = {**req.design_result, "processed_photo_url": fresh}
             except Exception:
                 pass
+
+    if req.design_result and req.design_result.get("thumbnail_key"):
+        try:
+            fresh_thumb = generate_presigned_url(req.design_result["thumbnail_key"], PRESIGNED_URL_TTL)
+            req.design_result = {**req.design_result, "thumbnail_url": fresh_thumb}
+        except Exception:
+            pass
 
     return req
 

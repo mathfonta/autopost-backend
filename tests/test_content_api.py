@@ -1043,3 +1043,44 @@ def test_freshen_urls_single_photo_retrocompat():
 
     assert result.photo_url == "https://fresh.r2/test.jpg"
     assert result.photo_urls is None
+
+
+def test_freshen_urls_video_thumbnail():
+    """_freshen_urls deve regenerar thumbnail_url a partir de design_result.thumbnail_key
+    para posts de vídeo (reels/story) — não sobrescreve processed_photo_url (tipo video)."""
+    from app.api.content import _freshen_urls
+
+    fake_req = _fake_content_request()
+    fake_req.photo_keys = None
+    fake_req.design_result = {
+        "type": "video",
+        "r2_key": f"uploads/{CLIENT_ID}/video.mp4",
+        "video_url": "https://old.r2/video.mp4",
+        "thumbnail_key": f"uploads/{CLIENT_ID}/thumbnail.jpg",
+    }
+
+    with patch("app.api.content.generate_presigned_url", side_effect=lambda key, ttl: f"https://fresh.r2/{key}"):
+        result = _freshen_urls(fake_req)
+
+    assert result.design_result["thumbnail_url"] == f"https://fresh.r2/uploads/{CLIENT_ID}/thumbnail.jpg"
+    assert "processed_photo_url" not in result.design_result
+
+
+def test_freshen_urls_video_without_thumbnail_key():
+    """Vídeo sem thumbnail_key (falha na extração, ou vídeo antigo pré-feature)
+    não deve quebrar _freshen_urls nem adicionar thumbnail_url."""
+    from app.api.content import _freshen_urls
+
+    fake_req = _fake_content_request()
+    fake_req.photo_keys = None
+    fake_req.design_result = {
+        "type": "video",
+        "r2_key": f"uploads/{CLIENT_ID}/video.mp4",
+        "video_url": "https://old.r2/video.mp4",
+        "thumbnail_key": None,
+    }
+
+    with patch("app.api.content.generate_presigned_url", return_value="https://fresh.r2/test.jpg"):
+        result = _freshen_urls(fake_req)
+
+    assert "thumbnail_url" not in result.design_result
