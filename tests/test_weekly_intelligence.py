@@ -258,10 +258,10 @@ async def test_weekly_intelligence_skips_when_exa_disabled():
 
 
 # ══════════════════════════════════════════════════════════════════
-#  Story 13.4 — GET /insights/weekly endpoint
+#  Story 27.1 — GET /insights/weekly endpoint (multi-segmento)
 # ══════════════════════════════════════════════════════════════════
 
-def _make_weekly_context():
+def _make_weekly_context(segment: str = "Construção civil"):
     """Cria instância WeeklyContext para uso nos testes."""
     from app.models.weekly_context import WeeklyContext
     from datetime import datetime, timezone
@@ -272,77 +272,106 @@ def _make_weekly_context():
     wc = WeeklyContext()
     wc.id = uuid4()
     wc.week_of = monday
-    wc.segment = "Construção civil"
+    wc.segment = segment
     wc.summary = "• Tendência 1\n• Tendência 2"
-    wc.hashtags = ["construcaocivil", "obra2026"]
+    wc.hashtags = ["tag1", "tag2"]
     wc.created_at = datetime.now(timezone.utc)
     return wc
 
 
-@pytest.mark.asyncio
-async def test_get_weekly_insight_returns_data():
-    """Endpoint retorna WeeklyContext quando disponível."""
-    from app.api.insights import get_weekly_insight
+def _mock_db_with_rows(rows: list):
+    """Mock de AsyncSession cujo .execute().scalars().all() retorna `rows`."""
+    mock_db = AsyncMock()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = rows
+    mock_result = MagicMock()
+    mock_result.scalars.return_value = mock_scalars
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    return mock_db
+
+
+def _make_client(segment: str | None):
+    """Cria client mock com segmento em brand_profile (padrão real, não business_segment)."""
     from app.models.client import Client
 
     mock_client = MagicMock(spec=Client)
     mock_client.id = uuid4()
-    mock_client.business_segment = "Construção civil"
-
-    weekly = _make_weekly_context()
-
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = weekly
-    mock_db.execute = AsyncMock(return_value=mock_result)
-
-    result = await get_weekly_insight(current_client=mock_client, db=mock_db)
-
-    assert result.segment == "Construção civil"
-    assert result.summary == "• Tendência 1\n• Tendência 2"
-    assert "construcaocivil" in result.hashtags
+    mock_client.brand_profile = {"segment": segment} if segment is not None else {}
+    return mock_client
 
 
 @pytest.mark.asyncio
-async def test_get_weekly_insight_404_when_no_data():
-    """Endpoint retorna 404 quando não há dados."""
+async def test_get_weekly_insight_returns_data_for_matching_segment():
+    """Cliente de 'Moda e vestuário' com WeeklyContext do próprio segmento recebe o dele."""
+    from app.api.insights import get_weekly_insight
+
+    client = _make_client("Moda e vestuário")
+    weekly_moda = _make_weekly_context(segment="Moda e vestuário")
+    weekly_construcao = _make_weekly_context(segment="Construção civil")
+    mock_db = _mock_db_with_rows([weekly_moda, weekly_construcao])
+
+    result = await get_weekly_insight(current_client=client, db=mock_db)
+
+    assert result.segment == "Moda e vestuário"
+
+
+@pytest.mark.asyncio
+async def test_get_weekly_insight_404_when_no_context_for_segment():
+    """Cliente de 'Moda e vestuário' sem WeeklyContext do próprio segmento recebe 404 —
+    NÃO recebe o de 'Construção civil' (não há mais fallback global)."""
     from fastapi import HTTPException
     from app.api.insights import get_weekly_insight
-    from app.models.client import Client
 
-    mock_client = MagicMock(spec=Client)
-    mock_client.id = uuid4()
-    mock_client.business_segment = "Segmento Inexistente"
-
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = None
-    mock_db.execute = AsyncMock(return_value=mock_result)
+    client = _make_client("Moda e vestuário")
+    weekly_construcao = _make_weekly_context(segment="Construção civil")
+    mock_db = _mock_db_with_rows([weekly_construcao])
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_weekly_insight(current_client=mock_client, db=mock_db)
+        await get_weekly_insight(current_client=client, db=mock_db)
 
     assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_weekly_insight_fallback_no_segment():
-    """Usa fallback 'geral' quando client não tem business_segment."""
+async def test_get_weekly_insight_404_when_client_has_no_segment():
+    """Cliente sem segment em brand_profile recebe 404 (não recebe dado de outro nicho)."""
+    from fastapi import HTTPException
     from app.api.insights import get_weekly_insight
-    from app.models.client import Client
 
-    mock_client = MagicMock(spec=Client)
-    mock_client.id = uuid4()
-    # Sem atributo business_segment → fallback para "geral"
-    del mock_client.business_segment
+    client = _make_client(None)
+    weekly_construcao = _make_weekly_context(segment="Construção civil")
+    mock_db = _mock_db_with_rows([weekly_construcao])
 
-    weekly = _make_weekly_context()
-    weekly.segment = "geral"
+    with pytest.raises(HTTPException) as exc_info:
+        await get_weekly_insight(current_client=client, db=mock_db)
 
-    mock_db = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = weekly
-    mock_db.execute = AsyncMock(return_value=mock_result)
+    assert exc_info.value.status_code == 404
 
-    result = await get_weekly_insight(current_client=mock_client, db=mock_db)
-    assert result is not None
+
+@pytest.mark.asyncio
+async def test_get_weekly_insight_no_regression_for_construcao_civil():
+    """Cliente de 'Construção civil' continua recebendo o registro correto (zero regressão)."""
+    from app.api.insights import get_weekly_insight
+
+    client = _make_client("Construção civil")
+    weekly_construcao = _make_weekly_context(segment="Construção civil")
+    mock_db = _mock_db_with_rows([weekly_construcao])
+
+    result = await get_weekly_insight(current_client=client, db=mock_db)
+
+    assert result.segment == "Construção civil"
+    assert result.summary == "• Tendência 1\n• Tendência 2"
+
+
+@pytest.mark.asyncio
+async def test_get_weekly_insight_matches_normalized_spelling_variant():
+    """'construcao civil' (sem acento/minúsculo) casa com 'Construção civil' salvo no banco."""
+    from app.api.insights import get_weekly_insight
+
+    client = _make_client("construcao civil")
+    weekly_construcao = _make_weekly_context(segment="Construção civil")
+    mock_db = _mock_db_with_rows([weekly_construcao])
+
+    result = await get_weekly_insight(current_client=client, db=mock_db)
+
+    assert result.segment == "Construção civil"

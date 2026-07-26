@@ -45,36 +45,32 @@ async def get_weekly_insight(
     """
     Retorna o último WeeklyContext para o segmento do client autenticado.
 
-    Filtra por `segment` extraído do perfil do client (business_segment).
-    Se não houver dados disponíveis, retorna 404.
+    Segmento vem de `brand_profile["segment"]` (Story 27.1 — antes lia o
+    atributo inexistente `business_segment`, que sempre caía em "geral").
+    Matching por segmento normalizado (case/acento-insensível), mesmo
+    padrão usado em `get_best_posting_time`. Sem dado para o segmento do
+    client: 404 honesto — não empresta o WeeklyContext de outro segmento
+    (o fallback antigo servia "Construção civil" para todo mundo).
     """
-    segment = getattr(current_client, "business_segment", None) or "geral"
+    segment = (current_client.brand_profile or {}).get("segment", "")
+    segment_normalized = _normalize_segment(segment) if segment else ""
 
-    # Busca o registro mais recente para o segmento
-    stmt = (
-        select(WeeklyContext)
-        .where(WeeklyContext.segment == segment)
-        .order_by(desc(WeeklyContext.week_of))
-        .limit(1)
-    )
-    result = await db.execute(stmt)
-    weekly = result.scalar_one_or_none()
-
-    if weekly is None:
-        # Fallback: tenta buscar da semana atual independente do segmento
-        monday = _current_monday()
-        stmt_any = (
+    weekly = None
+    if segment_normalized:
+        result = await db.execute(
             select(WeeklyContext)
             .order_by(desc(WeeklyContext.week_of))
-            .limit(1)
+            .limit(20)
         )
-        result_any = await db.execute(stmt_any)
-        weekly = result_any.scalar_one_or_none()
+        for row in result.scalars().all():
+            if _normalize_segment(row.segment) == segment_normalized:
+                weekly = row
+                break
 
     if weekly is None:
         raise HTTPException(
             status_code=404,
-            detail="Nenhuma inteligência de mercado disponível ainda. "
+            detail="Ainda não há inteligência de mercado para o seu segmento. "
                    "Os dados são gerados toda segunda-feira às 07h.",
         )
 
@@ -220,12 +216,6 @@ async def get_best_posting_time(
             "Escolha o horário que preferir — a sugestão melhora conforme você publica mais."
         ),
     )
-
-
-def _current_monday() -> date:
-    """Retorna a segunda-feira da semana corrente."""
-    today = date.today()
-    return today - timedelta(days=today.weekday())
 
 
 @router.get("/instagram")
