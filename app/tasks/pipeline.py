@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from celery import chain
 from celery.schedules import crontab
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.tasks import celery_app
 from app.models.content_request import ContentRequest, ContentStatus
@@ -930,6 +930,13 @@ def generate_weekly_intelligence(self) -> str:
         "mercado imobiliário Florianópolis Santa Catarina",
     ]
 
+    # Busca dedicada para horário de postagem (Epic 19, Story 19.3) — evergreen,
+    # NÃO é notícia da semana, por isso janela de busca bem maior (days_back).
+    # Mantida separada das queries de tendência de mercado acima para não
+    # misturar sinal: o Gemini só deve extrair horário destes snippets, nunca
+    # dos snippets de notícia (que não têm relação com horário de engajamento).
+    posting_time_query = "melhor horário para postar no Instagram construção civil Brasil"
+
     async def _run():
         all_snippets: list[str] = []
         for q in queries:
@@ -937,8 +944,24 @@ def generate_weekly_intelligence(self) -> str:
             all_snippets.extend(snippets)
             logger.info(f"[weekly-intel] query={q!r} snippets={len(snippets)}")
 
+        posting_time_snippets = await search_exa_raw(posting_time_query, days_back=365)
+        logger.info(
+            f"[weekly-intel] query={posting_time_query!r} snippets={len(posting_time_snippets)}"
+        )
+        suggested_time = await _extract_suggested_time(posting_time_snippets)
+
         if not all_snippets:
-            logger.info("[weekly-intel] nenhum snippet encontrado — encerrando")
+            if suggested_time:
+                # Sem tendências de mercado, mas com sinal de horário — ainda
+                # vale persistir para a Story 19.3 poder consumir.
+                await _save_weekly_context(
+                    segment="Construção civil",
+                    raw_snippets=[],
+                    summary="",
+                    hashtags=[],
+                    suggested_time=suggested_time,
+                )
+            logger.info("[weekly-intel] nenhum snippet de tendência encontrado — encerrando")
             return "no_snippets"
 
         summary = await _summarize_snippets(all_snippets)
@@ -948,10 +971,11 @@ def generate_weekly_intelligence(self) -> str:
             raw_snippets=all_snippets,
             summary=summary,
             hashtags=hashtags,
+            suggested_time=suggested_time,
         )
         logger.info(
             f"[weekly-intel] concluído: {len(all_snippets)} snippets "
-            f"summary={len(summary)} chars hashtags={len(hashtags)}"
+            f"summary={len(summary)} chars hashtags={len(hashtags)} suggested_time={suggested_time!r}"
         )
         return f"snippets={len(all_snippets)} hashtags={len(hashtags)}"
 
@@ -1006,11 +1030,61 @@ def _extract_weekly_hashtags(snippets: list[str]) -> list[str]:
     return [f"#{h.lower()}" for h in candidates[:10]]
 
 
+async def _extract_suggested_time(snippets: list[str]) -> str | None:
+    """
+    Extrai um horário sugerido (HH:MM) a partir de snippets de busca REAL
+    sobre boas práticas de horário de postagem (Epic 19, Story 19.3).
+
+    IMPORTANTE: só deve receber snippets da query dedicada de horário —
+    nunca os snippets de tendência de mercado, que não têm nenhum sinal
+    sobre horário de engajamento (extrair horário deles seria inventar
+    dado a partir de conteúdo não relacionado).
+
+    Retorna None se não houver snippets ou se o Gemini não conseguir
+    extrair um horário com confiança — nunca "chuta" um valor.
+    """
+    import os
+    import re
+    from google import genai
+
+    if not snippets:
+        return None
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return None
+
+    client = genai.Client(api_key=api_key)
+    joined = "\n".join(f"- {s}" for s in snippets[:10])
+    prompt = (
+        "Com base SOMENTE nestes resultados de busca sobre horário ideal para "
+        "postar no Instagram no nicho de construção civil no Brasil, responda "
+        "APENAS um horário no formato HH:MM (24h) que os resultados indicam como "
+        "melhor horário — sem texto adicional. Se os resultados não indicarem "
+        "claramente um horário, responda exatamente 'DESCONHECIDO'.\n\n"
+        f"Resultados:\n{joined}"
+    )
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+        )
+        text = (response.text or "").strip()
+        match = re.search(r"([01]?\d|2[0-3]):([0-5]\d)", text)
+        if not match:
+            return None
+        return f"{int(match.group(1)):02d}:{match.group(2)}"
+    except Exception as e:
+        logger.warning(f"[weekly-intel] falha ao extrair horário sugerido: {e}")
+        return None
+
+
 async def _save_weekly_context(
     segment: str,
     raw_snippets: list[str],
     summary: str,
     hashtags: list[str],
+    suggested_time: str | None = None,
 ) -> None:
     """Persiste WeeklyContext no banco para o segmento e semana atual."""
     from datetime import date, timedelta
@@ -1035,6 +1109,7 @@ async def _save_weekly_context(
             wc.raw_snippets = raw_snippets
             wc.summary = summary
             wc.hashtags = hashtags
+            wc.suggested_time = suggested_time
         else:
             wc = WeeklyContext(
                 week_of=week_of,
@@ -1042,6 +1117,7 @@ async def _save_weekly_context(
                 raw_snippets=raw_snippets,
                 summary=summary,
                 hashtags=hashtags,
+                suggested_time=suggested_time,
             )
             db.add(wc)
         await db.commit()
@@ -1075,6 +1151,54 @@ def keepalive_ping(self) -> str:
     except Exception as exc:
         logger.error(f"[keepalive] falha no ping: {exc}")
         return f"error: {exc}"
+
+
+# ─── Story 19.2: Publicação agendada (Celery Beat) ───────────────
+
+@celery_app.task(bind=True, name="pipeline.publish_scheduled_posts", max_retries=0)
+def publish_scheduled_posts(self) -> str:
+    """
+    Task Celery Beat — roda a cada minuto (Epic 19, Story 19.2).
+
+    Reivindica atomicamente os posts agendados cujo scheduled_for já
+    chegou via UPDATE...WHERE status='scheduled'...RETURNING, e dispara
+    publish_post (já existente, reusada sem alteração) para cada um.
+
+    O claim atômico é a garantia de idempotência: como o UPDATE row-level
+    do Postgres é atômico, dois ticks concorrentes do Beat nunca
+    reivindicam a mesma linha — só um consegue pegá-la no RETURNING.
+    Ver Architecture Review em docs/stories/epic-19-agendamento/epic.md.
+    """
+    async def _claim_due_posts() -> list[str]:
+        from app.core.database import WorkerSessionLocal
+
+        now = datetime.now(timezone.utc)
+        async with WorkerSessionLocal() as db:
+            result = await db.execute(
+                update(ContentRequest)
+                .where(
+                    ContentRequest.status == ContentStatus.scheduled,
+                    ContentRequest.scheduled_for <= now,
+                )
+                .values(status=ContentStatus.publishing)
+                .returning(ContentRequest.id)
+            )
+            ids = [str(row[0]) for row in result.fetchall()]
+            await db.commit()
+            return ids
+
+    try:
+        claimed_ids = _run_sync(_claim_due_posts())
+    except Exception as exc:
+        logger.error(f"[publish_scheduled_posts] falha ao reivindicar posts: {exc}")
+        return f"error: {exc}"
+
+    for request_id in claimed_ids:
+        publish_post.delay(request_id)
+
+    if claimed_ids:
+        logger.info(f"[publish_scheduled_posts] disparados {len(claimed_ids)} posts: {claimed_ids}")
+    return f"claimed={len(claimed_ids)}"
 
 
 # ─── Pipeline Chain ──────────────────────────────────────────────

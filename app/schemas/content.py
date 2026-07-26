@@ -84,6 +84,20 @@ class RejectRequest(BaseModel):
     reason: str | None = None
 
 
+# ─── Agendamento (Epic 19) ──────────────────────────────────────
+
+class ScheduleRequest(BaseModel):
+    """Body do endpoint de agendar — Story 19.1."""
+    scheduled_for: datetime
+
+
+class ScheduleResponse(BaseModel):
+    """Resposta do endpoint de agendar/reagendar."""
+    id: uuid.UUID
+    status: ContentStatus
+    scheduled_for: datetime
+
+
 class RetryResponse(BaseModel):
     """Resposta do endpoint de retry."""
     id: uuid.UUID

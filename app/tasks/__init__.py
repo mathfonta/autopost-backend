@@ -30,6 +30,12 @@ celery_app.conf.beat_schedule = {
         # inatividade que causa auto-pausa do Supabase free tier (Story 1.5).
         "schedule": crontab(hour=6, minute=0, day_of_week="monday,thursday"),
     },
+    "publish-scheduled-posts": {
+        "task": "pipeline.publish_scheduled_posts",
+        # A cada minuto — publica posts agendados (Epic 19, Story 19.2)
+        # cujo scheduled_for já chegou. Claim atômico garante idempotência.
+        "schedule": crontab(minute="*"),
+    },
 }
 
 celery_app.conf.update(

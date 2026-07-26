@@ -41,6 +41,10 @@ class WeeklyContext(Base):
         JSONB, nullable=True,
         comment="Hashtags em alta extraídas dos snippets"
     )
+    suggested_time: Mapped[str | None] = mapped_column(
+        String(5), nullable=True,
+        comment="Melhor horário sugerido (HH:MM) extraído de busca Exa sobre boas práticas do nicho (Epic 19, Story 19.3)"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

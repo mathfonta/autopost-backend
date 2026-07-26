@@ -27,6 +27,7 @@ class ContentStatus(str, enum.Enum):
     design = "design"                 # Agente Designer rodando
     awaiting_approval = "awaiting_approval"  # aguardando aprovação do cliente
     approved = "approved"             # cliente aprovou
+    scheduled = "scheduled"           # cliente agendou para horário futuro (Epic 19)
     publishing = "publishing"         # Agente Publicador rodando
     published = "published"           # publicado com sucesso
     failed = "failed"                 # erro técnico em alguma etapa
@@ -67,6 +68,12 @@ class ContentRequest(Base, TenantMixin):
     )
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ─── Agendamento (Epic 19) ───────────────────────────────────
+    scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Horário marcado para publicação automática (status=scheduled)"
+    )
 
     # ─── Resultados dos agentes (preenchidos conforme pipeline avança) ──
     analysis_result: Mapped[dict | None] = mapped_column(

@@ -8,6 +8,7 @@ GET  /content-requests/{id}     — detalhe de um request
 
 import uuid
 import logging
+from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -31,7 +32,12 @@ from app.schemas.content import (
     PatchCaptionRequest,
     RejectRequest,
     RetryResponse,
+    ScheduleRequest,
+    ScheduleResponse,
 )
+
+# Limite de quanto no futuro um post pode ser agendado (Story 19.1, AC5)
+MAX_SCHEDULE_DAYS = 30
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +458,146 @@ async def approve_content_request(
 
     logger.info(f"[content] aprovado id={req.id}")
     return ApproveResponse(id=req.id, status=ContentStatus.publishing)
+
+
+def _validate_scheduled_for(scheduled_for: datetime) -> datetime:
+    """
+    Normaliza e valida um horário de agendamento: timezone-aware (assume
+    UTC se naive), no futuro, e dentro da janela de MAX_SCHEDULE_DAYS.
+    Compartilhado entre agendar (Story 19.1) e reagendar (Story 19.2).
+    """
+    if scheduled_for.tzinfo is None:
+        scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    if scheduled_for <= now:
+        raise HTTPException(status_code=422, detail="scheduled_for precisa ser no futuro.")
+    if scheduled_for > now + timedelta(days=MAX_SCHEDULE_DAYS):
+        raise HTTPException(
+            status_code=422,
+            detail=f"scheduled_for não pode passar de {MAX_SCHEDULE_DAYS} dias no futuro.",
+        )
+    return scheduled_for
+
+
+# ─── POST /content-requests/{id}/schedule ────────────────────────
+# Epic 19 (Agendamento Inteligente) — Story 19.1.
+# Endpoint separado do /approve por decisão de arquitetura (ver
+# docs/stories/epic-19-agendamento/epic.md, Architecture Review):
+# intenções e respostas distintas, zero risco de regressão no
+# caminho "Publicar agora".
+
+@router.post("/{request_id}/schedule", response_model=ScheduleResponse)
+async def schedule_content_request(
+    request_id: uuid.UUID,
+    body: ScheduleRequest,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Agenda um post aguardando aprovação para publicação automática num
+    horário futuro. NÃO dispara publish_post — quem publica no horário
+    marcado é o executor Celery Beat (Story 19.2, pipeline.publish_scheduled_posts).
+    Apenas requests com status `awaiting_approval` podem ser agendados.
+    """
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status != ContentStatus.awaiting_approval:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Este request não pode ser agendado. Status atual: {req.status.value}.",
+        )
+
+    scheduled_for = _validate_scheduled_for(body.scheduled_for)
+
+    req.status = ContentStatus.scheduled
+    req.scheduled_for = scheduled_for
+    await db.commit()
+
+    logger.info(f"[content] agendado id={req.id} scheduled_for={scheduled_for.isoformat()}")
+    return ScheduleResponse(id=req.id, status=ContentStatus.scheduled, scheduled_for=scheduled_for)
+
+
+# ─── POST /content-requests/{id}/schedule/cancel ─────────────────
+# Story 19.2. Devolve para awaiting_approval — decisão travada no
+# Architecture Review: o conteúdo já foi aprovado pelo cliente,
+# cancelar o agendamento não deve descartá-lo (isso é o /reject).
+
+@router.post("/{request_id}/schedule/cancel", response_model=ApproveResponse)
+async def cancel_scheduled_content_request(
+    request_id: uuid.UUID,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancela o agendamento de um post — volta para awaiting_approval."""
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status != ContentStatus.scheduled:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Este request não está agendado. Status atual: {req.status.value}.",
+        )
+
+    req.status = ContentStatus.awaiting_approval
+    req.scheduled_for = None
+    await db.commit()
+
+    logger.info(f"[content] agendamento cancelado id={req.id}")
+    return ApproveResponse(id=req.id, status=ContentStatus.awaiting_approval)
+
+
+# ─── PATCH /content-requests/{id}/schedule ───────────────────────
+# Story 19.2 — reagendar: atualiza scheduled_for mantendo status=scheduled.
+
+@router.patch("/{request_id}/schedule", response_model=ScheduleResponse)
+async def reschedule_content_request(
+    request_id: uuid.UUID,
+    body: ScheduleRequest,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reagenda um post já agendado para um novo horário."""
+    result = await db.execute(
+        select(ContentRequest).where(ContentRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="Request não encontrado.")
+
+    if req.client_id != current_client.id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    if req.status != ContentStatus.scheduled:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Este request não está agendado. Status atual: {req.status.value}.",
+        )
+
+    scheduled_for = _validate_scheduled_for(body.scheduled_for)
+    req.scheduled_for = scheduled_for
+    await db.commit()
+
+    logger.info(f"[content] reagendado id={req.id} scheduled_for={scheduled_for.isoformat()}")
+    return ScheduleResponse(id=req.id, status=ContentStatus.scheduled, scheduled_for=scheduled_for)
 
 
 # ─── DELETE /content-requests/{id} ─────────────────────────────

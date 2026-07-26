@@ -141,6 +141,95 @@ async def test_summarize_snippets_gemini_exception_returns_fallback():
 
 
 # ══════════════════════════════════════════════════════════════════
+#  Story 19.3 — _extract_suggested_time
+# ══════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_extract_suggested_time_no_snippets_returns_none():
+    """Sem snippets → None, nunca inventa horário."""
+    import os
+    from app.tasks.pipeline import _extract_suggested_time  # type: ignore
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key"}):
+        result = await _extract_suggested_time([])
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_extract_suggested_time_no_api_key_returns_none():
+    """Sem GEMINI_API_KEY → None, nunca inventa horário."""
+    import os
+    from app.tasks.pipeline import _extract_suggested_time  # type: ignore
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+        result = await _extract_suggested_time(["algum snippet"])
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_extract_suggested_time_parses_valid_response():
+    """Resposta do Gemini com horário válido é extraída e normalizada."""
+    import os
+    from app.tasks.pipeline import _extract_suggested_time  # type: ignore
+
+    mock_response = MagicMock()
+    mock_response.text = "19:00"
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    mock_genai_module = MagicMock()
+    mock_genai_module.Client.return_value = mock_client
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key"}):
+        with patch.dict("sys.modules", {"google.genai": mock_genai_module, "google": MagicMock(genai=mock_genai_module)}):
+            result = await _extract_suggested_time(["horário ideal é às 19h"])
+
+    assert result == "19:00"
+
+
+@pytest.mark.asyncio
+async def test_extract_suggested_time_unknown_response_returns_none():
+    """Resposta 'DESCONHECIDO' (sem sinal claro nos resultados) → None, não inventa."""
+    import os
+    from app.tasks.pipeline import _extract_suggested_time  # type: ignore
+
+    mock_response = MagicMock()
+    mock_response.text = "DESCONHECIDO"
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    mock_genai_module = MagicMock()
+    mock_genai_module.Client.return_value = mock_client
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key"}):
+        with patch.dict("sys.modules", {"google.genai": mock_genai_module, "google": MagicMock(genai=mock_genai_module)}):
+            result = await _extract_suggested_time(["nada relevante aqui"])
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_extract_suggested_time_gemini_exception_returns_none():
+    """Falha do Gemini é capturada e retorna None, nunca propaga nem inventa."""
+    import os
+    from app.tasks.pipeline import _extract_suggested_time  # type: ignore
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(side_effect=Exception("API error"))
+
+    mock_genai_module = MagicMock()
+    mock_genai_module.Client.return_value = mock_client
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake-key"}):
+        with patch.dict("sys.modules", {"google.genai": mock_genai_module, "google": MagicMock(genai=mock_genai_module)}):
+            result = await _extract_suggested_time(["algum snippet"])
+
+    assert result is None
+
+
+# ══════════════════════════════════════════════════════════════════
 #  Story 13.4 — generate_weekly_intelligence (Celery task)
 # ══════════════════════════════════════════════════════════════════
 

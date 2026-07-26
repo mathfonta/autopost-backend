@@ -9,13 +9,15 @@ GET /insights/instagram   — métricas orgânicas de conta (30d), cache Redis 6
 import json
 import logging
 import unicodedata
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.instagram_analytics import get_instagram_analytics_30d
+from app.agents.copywriter import _DEFAULT_TIMES
 from app.core.auth import get_current_client
 from app.data.theme_library import THEME_LIBRARY
 from app.core.database import get_db
@@ -23,7 +25,11 @@ from app.core.redis_client import get_redis
 from app.models.client import Client
 from app.models.content_request import ContentRequest, ContentStatus
 from app.models.weekly_context import WeeklyContext
-from app.schemas.weekly_context import WeeklyContextResponse, StreakResponse
+from app.schemas.weekly_context import BestPostingTimeResponse, WeeklyContextResponse, StreakResponse
+
+SP_TZ = ZoneInfo("America/Sao_Paulo")
+_MIN_HISTORY_POSTS = 5   # Story 19.3 — mínimo de posts publicados p/ usar histórico
+_MIN_POSTS_PER_HOUR = 2  # guarda de densidade — evita "melhor horário" de 1 post sorte
 
 ANALYTICS_CACHE_TTL = 6 * 3600  # 6 horas
 
@@ -114,6 +120,94 @@ async def get_streak(
         f"[insights] streak={streak} week_days={week_days} client={current_client.id}"
     )
     return StreakResponse(streak=streak, week_days=week_days, week_goal=5)
+
+
+@router.get("/best-posting-time", response_model=BestPostingTimeResponse)
+async def get_best_posting_time(
+    format: str | None = None,
+    current_client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Sugere o melhor horário para publicar, em cascata (Epic 19, Story 19.3):
+    1. Histórico do próprio cliente — posts publicados com métricas (>= _MIN_HISTORY_POSTS)
+    2. Exa semanal — boas práticas do nicho (WeeklyContext.suggested_time)
+    3. Fallback estático por segmento (_DEFAULT_TIMES, mesma tabela do copywriter)
+
+    `format` (content_type) é aceito para uso futuro (refinar por formato); a v1
+    agrega o histórico geral do cliente, dado o baixo volume de dados por formato.
+    """
+    result = await db.execute(
+        select(ContentRequest.publish_result).where(
+            ContentRequest.client_id == current_client.id,
+            ContentRequest.status == ContentStatus.published,
+            ContentRequest.publish_result.isnot(None),
+        )
+    )
+    publish_results = [row[0] for row in result.fetchall() if row[0]]
+
+    hour_engagement: dict[int, list[int]] = {}
+    for pr in publish_results:
+        published_at_raw = pr.get("published_at")
+        if not published_at_raw:
+            continue
+        try:
+            published_at = datetime.fromisoformat(published_at_raw)
+        except (ValueError, TypeError):
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+
+        metrics = pr.get("metrics") or {}
+        engagement = (metrics.get("likes") or 0) + (metrics.get("comments") or 0) + (metrics.get("reach") or 0)
+        hour = published_at.astimezone(SP_TZ).hour
+        hour_engagement.setdefault(hour, []).append(engagement)
+
+    total_posts = sum(len(v) for v in hour_engagement.values())
+    if total_posts >= _MIN_HISTORY_POSTS:
+        avg_by_hour = {
+            hour: sum(values) / len(values)
+            for hour, values in hour_engagement.items()
+        }
+        best_hour = max(avg_by_hour, key=avg_by_hour.get)
+        # Guarda de densidade (AC3): se a hora vencedora tiver menos que
+        # _MIN_POSTS_PER_HOUR posts, descarta o histórico inteiro e cai para
+        # a próxima fonte — não busca uma "segunda melhor hora" dentro do
+        # mesmo histórico, para não inflar confiança num resultado de amostra pequena.
+        if len(hour_engagement[best_hour]) >= _MIN_POSTS_PER_HOUR:
+            logger.info(
+                f"[insights/best-posting-time] client={current_client.id} "
+                f"fonte=historico hora={best_hour} posts={total_posts}"
+            )
+            return BestPostingTimeResponse(horario=f"{best_hour:02d}:00", fonte="historico", confianca="alta")
+
+    segment = (current_client.brand_profile or {}).get("segment", "") or "default"
+
+    # Comparação por segmento normalizado (case/acento-insensível) — o segmento
+    # do client vem de texto livre do onboarding (app/agents/onboarding.py) e
+    # pode não bater exatamente com a grafia salva em WeeklyContext.segment
+    # (hoje hardcoded como "Construção civil" em generate_weekly_intelligence).
+    # Mesmo padrão de normalização já usado em list_themes() neste arquivo.
+    segment_normalized = _normalize_segment(segment)
+    weekly_result = await db.execute(
+        select(WeeklyContext.segment, WeeklyContext.suggested_time)
+        .where(WeeklyContext.suggested_time.isnot(None))
+        .order_by(desc(WeeklyContext.week_of))
+        .limit(20)
+    )
+    exa_time = None
+    for row_segment, row_suggested_time in weekly_result.fetchall():
+        if _normalize_segment(row_segment) == segment_normalized:
+            exa_time = row_suggested_time
+            break
+
+    if exa_time:
+        logger.info(f"[insights/best-posting-time] client={current_client.id} fonte=exa hora={exa_time}")
+        return BestPostingTimeResponse(horario=exa_time, fonte="exa", confianca="media")
+
+    fallback_time = _DEFAULT_TIMES.get(segment.lower().strip(), _DEFAULT_TIMES["default"])
+    logger.info(f"[insights/best-posting-time] client={current_client.id} fonte=fallback hora={fallback_time}")
+    return BestPostingTimeResponse(horario=fallback_time, fonte="fallback", confianca="baixa")
 
 
 def _current_monday() -> date:

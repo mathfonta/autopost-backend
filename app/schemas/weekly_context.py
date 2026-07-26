@@ -14,9 +14,17 @@ class WeeklyContextResponse(BaseModel):
     segment: str
     summary: str | None
     hashtags: list[str] | None
+    suggested_time: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BestPostingTimeResponse(BaseModel):
+    """Resposta do GET /insights/best-posting-time (Epic 19, Story 19.3)."""
+    horario: str
+    fonte: str
+    confianca: str
 
 
 class StreakResponse(BaseModel):
