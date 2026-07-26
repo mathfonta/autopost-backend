@@ -1,7 +1,7 @@
 """add suggested_time to weekly_context (Epic 19, Story 19.3)
 
-Revision ID: b2c3d4e5f6a7
-Revises: a1b2c3d4e5f6
+Revision ID: 18ec2311ad3b
+Revises: c5581ee0ad14
 Create Date: 2026-07-25 00:00:00.000000
 
 """
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = 'b2c3d4e5f6a7'
-down_revision: Union[str, Sequence[str], None] = 'a1b2c3d4e5f6'
+revision: str = '18ec2311ad3b'
+down_revision: Union[str, Sequence[str], None] = 'c5581ee0ad14'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
