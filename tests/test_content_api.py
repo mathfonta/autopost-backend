@@ -500,6 +500,52 @@ def test_list_content_requests_returns_paginated():
     assert len(data["items"]) == 1
 
 
+def test_list_content_requests_filters_by_status_scheduled():
+    """GET /?status=scheduled deve retornar 200 (Story 19.5 — filtro para fila de agendados)."""
+    fake_req = _fake_content_request(status=ContentStatus.scheduled)
+
+    async def _db_override():
+        db = AsyncMock(spec=AsyncSession)
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 1
+        items_result = MagicMock()
+        items_result.scalars.return_value.all.return_value = [fake_req]
+        db.execute = AsyncMock(side_effect=[count_result, items_result])
+        yield db
+
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = _db_override
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/content-requests",
+            params={"status": "scheduled"},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
+def test_list_content_requests_invalid_status_returns_422():
+    """GET /?status=algo_invalido → 422, sem tocar o banco."""
+    app.dependency_overrides[get_current_client] = _auth_override
+    app.dependency_overrides[get_db] = lambda: _make_db_with_request()
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/content-requests",
+            params={"status": "nao_existe"},
+            headers={"Authorization": "Bearer token"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
 def test_list_content_requests_empty():
     """GET / sem requests deve retornar lista vazia."""
     async def _db_override():

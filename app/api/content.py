@@ -287,23 +287,45 @@ async def get_content_request(
 async def list_content_requests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    status: str | None = Query(None, description="Filtra por status (ex.: 'scheduled')"),
     current_client: Client = Depends(get_current_client),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista paginada dos ContentRequests do cliente autenticado."""
+    """
+    Lista paginada dos ContentRequests do cliente autenticado.
+
+    Sem `status`: ordena por criação (mais recentes primeiro) — comportamento
+    original. Com `status=scheduled` (Epic 19, Story 19.5): ordena por
+    `scheduled_for` crescente (próximo a publicar primeiro) — a ordem por
+    `created_at` não faz sentido para a fila de agendados.
+    """
+    status_filter: ContentStatus | None = None
+    if status:
+        try:
+            status_filter = ContentStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"status inválido: {status!r}")
+
     offset = (page - 1) * page_size
+    filters = [ContentRequest.client_id == current_client.id]
+    if status_filter:
+        filters.append(ContentRequest.status == status_filter)
+
+    order_by = (
+        ContentRequest.scheduled_for.asc()
+        if status_filter == ContentStatus.scheduled
+        else ContentRequest.created_at.desc()
+    )
 
     # Total
-    count_result = await db.execute(
-        select(func.count()).where(ContentRequest.client_id == current_client.id)
-    )
+    count_result = await db.execute(select(func.count()).where(*filters))
     total = count_result.scalar_one()
 
     # Items
     items_result = await db.execute(
         select(ContentRequest)
-        .where(ContentRequest.client_id == current_client.id)
-        .order_by(ContentRequest.created_at.desc())
+        .where(*filters)
+        .order_by(order_by)
         .offset(offset)
         .limit(page_size)
     )

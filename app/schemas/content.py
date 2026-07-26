@@ -37,6 +37,7 @@ class ContentRequestDetailResponse(BaseModel):
     publish_result: dict[str, Any] | None = None
     caption_edited: bool = False
     retry_count: int = 0
+    scheduled_for: datetime | None = None
     content_type: str | None = None
     strategy: str | None = None
     user_context: str | None = None
